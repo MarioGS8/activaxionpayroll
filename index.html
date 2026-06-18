@@ -570,7 +570,7 @@ function calculate(){
             <tr style="border-top:1px solid rgba(0,0,0,0.15);background:#e8f5e9">
               <td colspan="8" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#0f6e56">Subtotal earned</td>
               <td colspan="4" style="font-size:12px;color:#0f6e56;text-align:right">${(
-                (allAdminItems.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(data.treatmentDays.size*15/60)) +
+                (allAdmin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(data.treatmentDays.size*15/60)) +
                 (Object.values(data.sessions).flat().length*10/60) +
                 (data.sessions.r15.length*30/60)+(data.sessions.r45.length*45/60)+
                 (data.sessions.r60.length*60/60)+(data.sessions.r90.length*90/60)+
