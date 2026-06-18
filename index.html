@@ -533,7 +533,7 @@ function calculate(){
             <tr style="background:#1a1a18"><td colspan="14" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#fff;letter-spacing:0.02em">${therapist} — Summary</td></tr>
             ${(()=>{
               const allAdminItems=[...data.admin,...data.rz];
-              const adminCleanHrs=(allAdminItems.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(data.treatmentDays.size*15/60)).toFixed(2);
+              const adminCleanHrs=(allAdmin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(data.treatmentDays.size*15/60)).toFixed(2);
               const adminCleanPay=(sumItems(allAdminItems)+cleaning).toFixed(2);
               const chartHrs=(Object.values(data.sessions).flat().length*10/60).toFixed(2);
               const chartPay=totalCharting.toFixed(2);
@@ -990,8 +990,6 @@ function downloadExcel(){
   const wb=XLSX.utils.book_new();
   const n=(v)=>isNaN(v)||v===undefined||v===null?0:parseFloat(v)||0;
   const fmt=(v)=>'$'+n(v).toFixed(2);
-
-  const COL_HEADERS=['Invoice #','Invoice Date','Service Category','Line Item Name','Service Time','Service Date','Qty','Practitioner','Discount Name','Disc Amt','Subtotal','Tax','Total','Balance','Patient Name'];
   const rows=[];
 
   for(const[therapist,r]of Object.entries(lastResults)){
@@ -1001,83 +999,64 @@ function downloadExcel(){
 
     const uid=therapist.replace(/\s+/g,'_');
     const notes=document.getElementById('notes-'+uid)?.value||'';
-
-    const addSection=(label,items,subtotalLabel)=>{
-      rows.push([label]);
-      rows.push(COL_HEADERS);
-      if(!items||items.length===0){
-        rows.push(['No sessions this period']);
-      } else {
-        for(const i of items){
-          rows.push([i.invoice,i.invoiceDate,i.serviceCategory||'',i.name,i.serviceTime,i.date,i.quantity,i.practitioner,i.discountName,i.discountAmount,i.subtotal,i.taxAmount,i.total,i.balance,i.patient||'']);
-        }
-      }
-      if(subtotalLabel) rows.push(['',subtotalLabel]);
-      rows.push([]);
-    };
-
-    rows.push([`=== ${therapist.toUpperCase()} ===`]);
-    rows.push([]);
+    const avg=n(calcAvgWage(rates))||1;
 
     const allAdmin=[...data.admin,...data.rz];
-    const adminCleanHrs=(allAdmin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(data.treatmentDays.size*15/60)).toFixed(2);
-    addSection(`ADMIN & CLEANING`,allAdmin,`Total: ${adminCleanHrs} hrs  |  ${rates.admin.toFixed(2)}/hr  |  ${fmt(n(r.adminPay)+n(r.cleaning))}`);
+    const adminHrs=parseFloat(allAdmin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+parseFloat((m/60).toFixed(2));},0).toFixed(2));
+    const cleanHrs=parseFloat((data.treatmentDays.size*15/60).toFixed(2));
+    const adminCleanHrs=parseFloat((adminHrs+cleanHrs).toFixed(2));
+    const adminCleanPay=n(r.adminPay)+n(r.cleaning);
 
-    const treatCount=Object.values(data.sessions).flat().length;
-    const chartHrs=(treatCount*10/60).toFixed(2);
-    rows.push([`CHARTING`]);
-    rows.push(['',`10min admin × ${treatCount} treatments`,'','','','','','','','','','','',`Total: ${chartHrs} hrs  |  ${rates.admin.toFixed(2)}/hr  |  ${fmt(r.charting)}`]);
+    const chartTreat=data.chartingCount||0;
+    const chartHrs=parseFloat((chartTreat*10/60).toFixed(2));
+    const chartPay=n(r.charting);
+
+    const r15Hrs=parseFloat((data.sessions.r15.length*30/60).toFixed(2));
+    const r15Pay=data.sessions.r15.reduce((s,i)=>s+i.amount,0);
+    const r45Hrs=parseFloat((data.sessions.r45.length*45/60).toFixed(2));
+    const r45Pay=data.sessions.r45.reduce((s,i)=>s+i.amount,0);
+    const r60Hrs=parseFloat((data.sessions.r60.length*60/60).toFixed(2));
+    const r60Pay=data.sessions.r60.reduce((s,i)=>s+i.amount,0);
+    const r90Hrs=parseFloat((data.sessions.r90.length*90/60).toFixed(2));
+    const r90Pay=data.sessions.r90.reduce((s,i)=>s+i.amount,0);
+    const massHrs=parseFloat(data.massage.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+parseFloat((m/60).toFixed(2));},0).toFixed(2));
+    const massPay=data.massage.reduce((s,i)=>s+i.amount,0);
+    const prodPay=n(r.products);
+    const salPay=n(r.salary);
+    const salHrs=salPay>0?parseFloat((salPay/avg).toFixed(2)):0;
+
+    rows.push([therapist]);
+    rows.push(['Component','Rate','Hours','Amount']);
+    rows.push(['Admin & Cleaning', fmt(rates.admin)+'/hr', adminCleanHrs+' hrs', fmt(adminCleanPay)]);
+    rows.push(['Charting', fmt(rates.admin)+'/hr', chartHrs+' hrs', fmt(chartPay)]);
+    rows.push(['15-30min Therapy', fmt(rates.r30/30*60)+'/hr', r15Hrs+' hrs', fmt(r15Pay)]);
+    rows.push(['45min Therapy', fmt(rates.r45/45*60)+'/hr', r45Hrs+' hrs', fmt(r45Pay)]);
+    rows.push(['60min Therapy', fmt(rates.r60/60*60)+'/hr', r60Hrs+' hrs', fmt(r60Pay)]);
+    rows.push(['90min Therapy', fmt(rates.r90/90*60)+'/hr', r90Hrs+' hrs', fmt(r90Pay)]);
+    if(rates.massage>0) rows.push(['Massage Therapy', fmt(rates.massage)+'/hr', massHrs+' hrs', fmt(massPay)]);
+    rows.push(['Products Commission', '', '', fmt(prodPay)]);
+    if(salPay>0) rows.push(['Salary', fmt(avg)+'/hr', salHrs+' hrs', fmt(salPay)]);
+    rows.push(['Subtotal earned', '', '', fmt(n(r.commission)+n(r.charting)+n(r.adminPay)+n(r.massage)+n(r.products)+n(r.cleaning)+n(r.salary))]);
     rows.push([]);
-
-    const sessionDefs=[
-      {key:'r15',label:'15-30MIN THERAPY',mins:30,rateKey:'r30'},
-      {key:'r45',label:'45MIN THERAPY',mins:45,rateKey:'r45'},
-      {key:'r60',label:'60MIN THERAPY',mins:60,rateKey:'r60'},
-      {key:'r90',label:'90MIN THERAPY',mins:90,rateKey:'r90'},
-    ];
-    for(const {key,label,mins,rateKey} of sessionDefs){
-      const items=data.sessions[key];
-      const hrs=(items.length*mins/60).toFixed(2);
-      const pay=fmt(items.reduce((s,i)=>s+i.amount,0));
-      const wage=rates[rateKey].toFixed(2);
-      const hrly=(rates[rateKey]/mins*60).toFixed(2);
-      addSection(label,items,`Total: ${hrs} hrs  |  ${wage} (${hrly}/hr)  |  ${pay}`);
-    }
-
-    if(rates.massage>0){
-      const massHrs=data.massage.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0).toFixed(2);
-      const massPay=fmt(data.massage.reduce((s,i)=>s+i.amount,0));
-      addSection('MASSAGE THERAPY',data.massage,`Total: ${massHrs} hrs  |  ${rates.massage.toFixed(2)}/hr  |  ${massPay}`);
-    }
-
-    addSection('PRODUCTS',data.products||[],`Total: ${fmt((data.products||[]).reduce((s,i)=>s+i.amount,0))}`);
-
-    const avg=n(calcAvgWage(rates))||1;
-    rows.push(['MANUAL ENTRIES & TOTALS']);
-    rows.push(['Item','Hours','Rate','Amount']);
-    const manualRows=[
-      ['Sick/Personal Pay', n(r.sick)>0?(n(r.sick)/avg).toFixed(2)+' hrs':'', avg.toFixed(2)+'/hr', fmt(r.sick)],
-      ['Holiday Pay', n(r.holiday)>0?(n(r.holiday)/avg).toFixed(2)+' hrs':'', avg.toFixed(2)+'/hr', fmt(r.holiday)],
-      ['Vacation Pay', n(r.vacation)>0?(n(r.vacation)/avg).toFixed(2)+' hrs':'', avg.toFixed(2)+'/hr', fmt(r.vacation)],
-      ['Gross Payroll','','',fmt(r.gross)],
-      ['Bonus','','',fmt(r.bonus)],
-      ['RRSP EE (6%)','','',fmt(r.rrspEE)],
-      ['RRSP ER (3%)','','',fmt(r.rrspER)],
-      ['TOTAL PAYROLL','','',fmt(r.total)],
-    ];
-    for(const row of manualRows) rows.push(row);
-    if(notes) rows.push(['Notes:',notes]);
+    rows.push(['Sick/Personal Pay', fmt(avg)+'/hr', n(r.sick)>0?parseFloat((n(r.sick)/avg).toFixed(2))+' hrs':'0.00 hrs', fmt(r.sick)]);
+    rows.push(['Holiday Pay', fmt(avg)+'/hr', n(r.holiday)>0?parseFloat((n(r.holiday)/avg).toFixed(2))+' hrs':'0.00 hrs', fmt(r.holiday)]);
+    rows.push(['Vacation Pay', fmt(avg)+'/hr', n(r.vacation)>0?parseFloat((n(r.vacation)/avg).toFixed(2))+' hrs':'0.00 hrs', fmt(r.vacation)]);
+    rows.push(['Gross Payroll', '', '', fmt(r.gross)]);
+    rows.push(['RRSP EE (6%)', '', '', fmt(r.rrspEE)]);
+    rows.push(['RRSP ER (3%)', '', '', fmt(r.rrspER)]);
+    rows.push(['Bonus (excl. RRSP)', '', '', fmt(r.bonus)]);
+    rows.push(['Total Payroll', '', '', fmt(r.total)]);
+    if(notes) rows.push(['Notes', notes]);
     rows.push([]);
     rows.push([]);
   }
 
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:12},{wch:14},{wch:18},{wch:50},{wch:12},{wch:14},{wch:6},{wch:20},{wch:15},{wch:10},{wch:10},{wch:8},{wch:10},{wch:10},{wch:25}];
+  ws['!cols']=[{wch:25},{wch:14},{wch:12},{wch:14}];
   const sheetName=`${periodStart} to ${periodEnd}`.substring(0,31);
   XLSX.utils.book_append_sheet(wb,ws,sheetName);
   XLSX.writeFile(wb,`Payroll_${periodStart}_to_${periodEnd}.xlsx`);
 }
-
 </script>
 </body>
 </html>
