@@ -552,25 +552,40 @@ function calculate(){
                 <td colspan="2" style="font-size:12px;text-align:right;font-weight:500">$$${pay}</td>
               </tr>`;
               let rows='';
-              if(parseFloat(adminCleanPay)>0) rows+=summaryRow('Admin & Cleaning',(rates.admin).toFixed(2),adminCleanHrs,adminCleanPay);
-              if(parseFloat(chartPay)>0) rows+=summaryRow('Charting',(rates.admin).toFixed(2),chartHrs,chartPay);
-              if(parseFloat(r15Pay)>0) rows+=summaryRow('15-30min Therapy',(rates.r30/30*60).toFixed(2),r15Hrs,r15Pay);
-              if(parseFloat(r45Pay)>0) rows+=summaryRow('45min Therapy',(rates.r45/45*60).toFixed(2),r45Hrs,r45Pay);
-              if(parseFloat(r60Pay)>0) rows+=summaryRow('60min Therapy',(rates.r60/60*60).toFixed(2),r60Hrs,r60Pay);
-              if(parseFloat(r90Pay)>0) rows+=summaryRow('90min Therapy',(rates.r90/90*60).toFixed(2),r90Hrs,r90Pay);
-              if(parseFloat(massPay)>0) rows+=summaryRow('Massage Therapy',(rates.massage).toFixed(2),massHrs,massPay);
-              if(parseFloat(prodPay)>0) rows+=summaryRow('Products Commission',null,null,prodPay);
-              if(parseFloat(salPay)>0) rows+=summaryRow('Salary',null,null,salPay);
+              rows+=summaryRow('Admin & Cleaning',(rates.admin).toFixed(2),adminCleanHrs,adminCleanPay);
+              rows+=summaryRow('Charting',(rates.admin).toFixed(2),chartHrs,chartPay);
+              rows+=summaryRow('15-30min Therapy',(rates.r30/30*60).toFixed(2),r15Hrs,r15Pay);
+              rows+=summaryRow('45min Therapy',(rates.r45/45*60).toFixed(2),r45Hrs,r45Pay);
+              rows+=summaryRow('60min Therapy',(rates.r60/60*60).toFixed(2),r60Hrs,r60Pay);
+              rows+=summaryRow('90min Therapy',(rates.r90/90*60).toFixed(2),r90Hrs,r90Pay);
+              if(rates.massage>0) rows+=summaryRow('Massage Therapy',(rates.massage).toFixed(2),massHrs,massPay);
+              rows+=summaryRow('Products Commission',null,null,prodPay);
+              if(salary>0) rows+=summaryRow('Salary',null,null,salPay);
               return rows;
             })()}
             <tr style="border-top:1px solid rgba(0,0,0,0.15);background:#e8f5e9">
               <td colspan="13" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#0f6e56">Subtotal earned</td>
               <td style="font-size:13px;font-weight:600;text-align:right;padding:8px 0;color:#0f6e56" id="subtotal-earned-${uid}">$0.00</td>
             </tr>
-            <tr class="section-header"><td colspan="2">Manual entries</td></tr>
-            <tr><td>Sick / Personal Pay</td><td><input type="number" class="manual-input" min="0" step="0.01" value="0" id="sick-${uid}" oninput="recalcTotals('${uid}','${therapist}')"></td></tr>
-            <tr><td>Holiday Pay</td><td><input type="number" class="manual-input" min="0" step="0.01" value="0" id="holiday-${uid}" oninput="recalcTotals('${uid}','${therapist}')"></td></tr>
-            <tr><td>Vacation Pay</td><td><input type="number" class="manual-input" min="0" step="0.01" value="0" id="vacation-${uid}" oninput="recalcTotals('${uid}','${therapist}')"></td></tr>
+            <tr class="section-header"><td colspan="14">Manual entries</td></tr>
+            <tr>
+              <td colspan="5">Sick / Personal Pay</td>
+              <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="0" id="sick-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px"></td>
+              <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">@ $${calcAvgWage(rates).toFixed(2)}/hr</td>
+              <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="sick-hrs-${uid}">0.00 hrs</td>
+            </tr>
+            <tr>
+              <td colspan="5">Holiday Pay</td>
+              <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="0" id="holiday-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px"></td>
+              <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">@ $${calcAvgWage(rates).toFixed(2)}/hr</td>
+              <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="holiday-hrs-${uid}">0.00 hrs</td>
+            </tr>
+            <tr>
+              <td colspan="5">Vacation Pay</td>
+              <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="0" id="vacation-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px"></td>
+              <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">@ $${calcAvgWage(rates).toFixed(2)}/hr</td>
+              <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="vacation-hrs-${uid}">0.00 hrs</td>
+            </tr>
             <tr class="total-row"><td>Gross Payroll</td><td id="gross-row-${uid}">$0.00</td></tr>
             <tr class="section-header"><td colspan="2">RRSP</td></tr>
             <tr class="rrsp-row"><td>RRSP EE (6%)</td><td id="rrsp-ee-${uid}">$0.00</td></tr>
@@ -617,8 +632,9 @@ function calculate(){
         <p style="font-size:12px;color:#5f5e5a;margin-bottom:4px;font-weight:500">Notes</p>
         <textarea class="notes-area" id="notes-${uid}" placeholder="Add any notes for your bookkeeper..."></textarea>
       </div>
-      <div style="margin-top:0.75rem;">
-        <button onclick="downloadTherapistSummary('${therapist}')" style="padding:8px 16px;background:#185fa5;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer;width:100%">⬇ Download ${therapist} summary</button>
+      <div style="margin-top:0.75rem;display:flex;gap:8px">
+        <button onclick="downloadTherapistSummary('${therapist}')" style="padding:8px 16px;background:#185fa5;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer;flex:1">⬇ Download summary</button>
+        <button onclick="copyTherapistSummary('${therapist}','${uid}')" id="copy-btn-${uid}" style="padding:8px 16px;background:#0f6e56;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer;flex:1">📋 Copy summary text</button>
       </div>
       </div>`;
     resultsEl.appendChild(card);
@@ -658,9 +674,20 @@ function recalcTotals(uid, therapist){
   document.getElementById('rrsp-er-'+uid).textContent=fmt(rrspER);
   document.getElementById('total-'+uid).textContent=fmt(total);
   r.gross=gross; r.rrspEE=rrspEE; r.rrspER=rrspER; r.total=total;
-  // Update subtotal earned (base minus manual entries)
+  // Update subtotal earned
   const subtotalEl=document.getElementById('subtotal-earned-'+uid);
   if(subtotalEl) subtotalEl.textContent=fmt(r.commission+(r.cancellation||0)+r.charting+r.adminPay+r.massage+(r.products||0)+r.cleaning+r.salary);
+  // Update hours for manual entries
+  const rates=THERAPIST_RATES[therapist];
+  if(rates){
+    const avg=calcAvgWage(rates)||1;
+    const sickHrsEl=document.getElementById('sick-hrs-'+uid);
+    const holidayHrsEl=document.getElementById('holiday-hrs-'+uid);
+    const vacationHrsEl=document.getElementById('vacation-hrs-'+uid);
+    if(sickHrsEl) sickHrsEl.textContent=(sick/avg).toFixed(2)+' hrs';
+    if(holidayHrsEl) holidayHrsEl.textContent=(holiday/avg).toFixed(2)+' hrs';
+    if(vacationHrsEl) vacationHrsEl.textContent=(vacation/avg).toFixed(2)+' hrs';
+  }
 }
 
 function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
@@ -844,6 +871,86 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
   recalcTotals(uid, therapist);
 }
 
+function copyTherapistSummary(therapist, uid){
+  const data=lastTherapistData[therapist];
+  if(!data) return;
+
+  let body=`Payroll Summary — ${therapist} — ${periodStart} to ${periodEnd}\n\n`;
+  body+=`Hi ${therapist.split(' ')[0]},\n\nPlease review your sessions below and confirm everything is accounted for.\n\n`;
+
+  const addSection=(label,items)=>{
+    if(!items||items.length===0) return;
+    body+=`${label.toUpperCase()}\n${'─'.repeat(60)}\n`;
+    for(const i of items){
+      const svc=i.name.length>45?i.name.substring(0,45)+'...':i.name;
+      body+=`${i.date}  •  ${svc}  •  ${i.patient||''}\n`;
+    }
+    body+='\n';
+  };
+
+  const allAdmin=[...data.admin,...data.rz];
+  addSection('Admin Hours & Recovery Zone', allAdmin);
+  addSection('15-30min Therapy', data.sessions.r15);
+  addSection('45min Therapy', data.sessions.r45);
+  addSection('60min Therapy', data.sessions.r60);
+  addSection('90min Therapy', data.sessions.r90);
+  addSection('Massage Therapy', data.massage);
+  if((data.products||[]).length>0) addSection('Products', data.products);
+
+  body+=`\nThank you,\nActiv Axion`;
+
+  navigator.clipboard.writeText(body).then(()=>{
+    const btn=document.getElementById('copy-btn-'+uid);
+    if(btn){ btn.textContent='✓ Copied!'; btn.style.background='#3b6d11'; setTimeout(()=>{ btn.textContent='📋 Copy summary text'; btn.style.background='#0f6e56'; },2500); }
+  }).catch(()=>{
+    // Fallback for browsers that block clipboard
+    const ta=document.createElement('textarea');
+    ta.value=body; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+    const btn=document.getElementById('copy-btn-'+uid);
+    if(btn){ btn.textContent='✓ Copied!'; btn.style.background='#3b6d11'; setTimeout(()=>{ btn.textContent='📋 Copy summary text'; btn.style.background='#0f6e56'; },2500); }
+  });
+}
+
+function emailTherapistSummary(therapist){
+  const data=lastTherapistData[therapist];
+  if(!data) return;
+  const rates=THERAPIST_RATES[therapist];
+
+  const fmt=(v)=>'$'+parseFloat(v||0).toFixed(2);
+  const line=(label,date,service,patient)=>`${date}  |  ${service}  |  ${patient}`;
+
+  let body=`Hi ${therapist.split(' ')[0]},\n\nPlease find your payroll summary for ${periodStart} to ${periodEnd} below. Kindly review and confirm all sessions are accounted for.\n\n`;
+
+  const addSection=(label,items)=>{
+    if(!items||items.length===0) return;
+    body+=`${'='.repeat(40)}\n${label}\n${'='.repeat(40)}\n`;
+    body+='Date          | Service                                    | Patient\n';
+    body+='-'.repeat(80)+'\n';
+    for(const i of items){
+      const svc=i.name.length>42?i.name.substring(0,42)+'...':i.name;
+      body+=`${i.date.padEnd(14)}| ${svc.padEnd(44)}| ${i.patient||''}\n`;
+    }
+    body+='\n';
+  };
+
+  const allAdmin=[...data.admin,...data.rz];
+  addSection('Admin Hours & Recovery Zone', allAdmin);
+  addSection('15-30min Therapy', data.sessions.r15);
+  addSection('45min Therapy', data.sessions.r45);
+  addSection('60min Therapy', data.sessions.r60);
+  addSection('90min Therapy', data.sessions.r90);
+  addSection('Massage Therapy', data.massage);
+  if((data.products||[]).length>0) addSection('Products', data.products);
+
+  body+=`\nIf you have any questions, please don't hesitate to reach out.\n\nActiv Axion`;
+
+  const subject=encodeURIComponent(`Payroll Summary — ${therapist} — ${periodStart} to ${periodEnd}`);
+  const bodyEncoded=encodeURIComponent(body);
+  window.open(`mailto:?subject=${subject}&body=${bodyEncoded}`);
+}
+
 function downloadTherapistSummary(therapist){
   const r=lastResults[therapist];
   if(!r) return;
@@ -998,6 +1105,86 @@ function downloadExcel(){
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
   XLSX.writeFile(wb, `Payroll_${periodStart}_to_${periodEnd}.xlsx`);
 }
+function copyTherapistSummary(therapist, uid){
+  const data=lastTherapistData[therapist];
+  if(!data) return;
+
+  let body=`Payroll Summary — ${therapist} — ${periodStart} to ${periodEnd}\n\n`;
+  body+=`Hi ${therapist.split(' ')[0]},\n\nPlease review your sessions below and confirm everything is accounted for.\n\n`;
+
+  const addSection=(label,items)=>{
+    if(!items||items.length===0) return;
+    body+=`${label.toUpperCase()}\n${'─'.repeat(60)}\n`;
+    for(const i of items){
+      const svc=i.name.length>45?i.name.substring(0,45)+'...':i.name;
+      body+=`${i.date}  •  ${svc}  •  ${i.patient||''}\n`;
+    }
+    body+='\n';
+  };
+
+  const allAdmin=[...data.admin,...data.rz];
+  addSection('Admin Hours & Recovery Zone', allAdmin);
+  addSection('15-30min Therapy', data.sessions.r15);
+  addSection('45min Therapy', data.sessions.r45);
+  addSection('60min Therapy', data.sessions.r60);
+  addSection('90min Therapy', data.sessions.r90);
+  addSection('Massage Therapy', data.massage);
+  if((data.products||[]).length>0) addSection('Products', data.products);
+
+  body+=`\nThank you,\nActiv Axion`;
+
+  navigator.clipboard.writeText(body).then(()=>{
+    const btn=document.getElementById('copy-btn-'+uid);
+    if(btn){ btn.textContent='✓ Copied!'; btn.style.background='#3b6d11'; setTimeout(()=>{ btn.textContent='📋 Copy summary text'; btn.style.background='#0f6e56'; },2500); }
+  }).catch(()=>{
+    // Fallback for browsers that block clipboard
+    const ta=document.createElement('textarea');
+    ta.value=body; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+    const btn=document.getElementById('copy-btn-'+uid);
+    if(btn){ btn.textContent='✓ Copied!'; btn.style.background='#3b6d11'; setTimeout(()=>{ btn.textContent='📋 Copy summary text'; btn.style.background='#0f6e56'; },2500); }
+  });
+}
+
+function emailTherapistSummary(therapist){
+  const data=lastTherapistData[therapist];
+  if(!data) return;
+  const rates=THERAPIST_RATES[therapist];
+
+  const fmt=(v)=>'$'+parseFloat(v||0).toFixed(2);
+  const line=(label,date,service,patient)=>`${date}  |  ${service}  |  ${patient}`;
+
+  let body=`Hi ${therapist.split(' ')[0]},\n\nPlease find your payroll summary for ${periodStart} to ${periodEnd} below. Kindly review and confirm all sessions are accounted for.\n\n`;
+
+  const addSection=(label,items)=>{
+    if(!items||items.length===0) return;
+    body+=`${'='.repeat(40)}\n${label}\n${'='.repeat(40)}\n`;
+    body+='Date          | Service                                    | Patient\n';
+    body+='-'.repeat(80)+'\n';
+    for(const i of items){
+      const svc=i.name.length>42?i.name.substring(0,42)+'...':i.name;
+      body+=`${i.date.padEnd(14)}| ${svc.padEnd(44)}| ${i.patient||''}\n`;
+    }
+    body+='\n';
+  };
+
+  const allAdmin=[...data.admin,...data.rz];
+  addSection('Admin Hours & Recovery Zone', allAdmin);
+  addSection('15-30min Therapy', data.sessions.r15);
+  addSection('45min Therapy', data.sessions.r45);
+  addSection('60min Therapy', data.sessions.r60);
+  addSection('90min Therapy', data.sessions.r90);
+  addSection('Massage Therapy', data.massage);
+  if((data.products||[]).length>0) addSection('Products', data.products);
+
+  body+=`\nIf you have any questions, please don't hesitate to reach out.\n\nActiv Axion`;
+
+  const subject=encodeURIComponent(`Payroll Summary — ${therapist} — ${periodStart} to ${periodEnd}`);
+  const bodyEncoded=encodeURIComponent(body);
+  window.open(`mailto:?subject=${subject}&body=${bodyEncoded}`);
+}
+
 function downloadTherapistSummary(therapist){
   const r=lastResults[therapist];
   if(!r) return;
@@ -1118,6 +1305,86 @@ function downloadExcel(){
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
   XLSX.writeFile(wb, `Payroll_${periodStart}_to_${periodEnd}.xlsx`);
 }
+function copyTherapistSummary(therapist, uid){
+  const data=lastTherapistData[therapist];
+  if(!data) return;
+
+  let body=`Payroll Summary — ${therapist} — ${periodStart} to ${periodEnd}\n\n`;
+  body+=`Hi ${therapist.split(' ')[0]},\n\nPlease review your sessions below and confirm everything is accounted for.\n\n`;
+
+  const addSection=(label,items)=>{
+    if(!items||items.length===0) return;
+    body+=`${label.toUpperCase()}\n${'─'.repeat(60)}\n`;
+    for(const i of items){
+      const svc=i.name.length>45?i.name.substring(0,45)+'...':i.name;
+      body+=`${i.date}  •  ${svc}  •  ${i.patient||''}\n`;
+    }
+    body+='\n';
+  };
+
+  const allAdmin=[...data.admin,...data.rz];
+  addSection('Admin Hours & Recovery Zone', allAdmin);
+  addSection('15-30min Therapy', data.sessions.r15);
+  addSection('45min Therapy', data.sessions.r45);
+  addSection('60min Therapy', data.sessions.r60);
+  addSection('90min Therapy', data.sessions.r90);
+  addSection('Massage Therapy', data.massage);
+  if((data.products||[]).length>0) addSection('Products', data.products);
+
+  body+=`\nThank you,\nActiv Axion`;
+
+  navigator.clipboard.writeText(body).then(()=>{
+    const btn=document.getElementById('copy-btn-'+uid);
+    if(btn){ btn.textContent='✓ Copied!'; btn.style.background='#3b6d11'; setTimeout(()=>{ btn.textContent='📋 Copy summary text'; btn.style.background='#0f6e56'; },2500); }
+  }).catch(()=>{
+    // Fallback for browsers that block clipboard
+    const ta=document.createElement('textarea');
+    ta.value=body; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+    const btn=document.getElementById('copy-btn-'+uid);
+    if(btn){ btn.textContent='✓ Copied!'; btn.style.background='#3b6d11'; setTimeout(()=>{ btn.textContent='📋 Copy summary text'; btn.style.background='#0f6e56'; },2500); }
+  });
+}
+
+function emailTherapistSummary(therapist){
+  const data=lastTherapistData[therapist];
+  if(!data) return;
+  const rates=THERAPIST_RATES[therapist];
+
+  const fmt=(v)=>'$'+parseFloat(v||0).toFixed(2);
+  const line=(label,date,service,patient)=>`${date}  |  ${service}  |  ${patient}`;
+
+  let body=`Hi ${therapist.split(' ')[0]},\n\nPlease find your payroll summary for ${periodStart} to ${periodEnd} below. Kindly review and confirm all sessions are accounted for.\n\n`;
+
+  const addSection=(label,items)=>{
+    if(!items||items.length===0) return;
+    body+=`${'='.repeat(40)}\n${label}\n${'='.repeat(40)}\n`;
+    body+='Date          | Service                                    | Patient\n';
+    body+='-'.repeat(80)+'\n';
+    for(const i of items){
+      const svc=i.name.length>42?i.name.substring(0,42)+'...':i.name;
+      body+=`${i.date.padEnd(14)}| ${svc.padEnd(44)}| ${i.patient||''}\n`;
+    }
+    body+='\n';
+  };
+
+  const allAdmin=[...data.admin,...data.rz];
+  addSection('Admin Hours & Recovery Zone', allAdmin);
+  addSection('15-30min Therapy', data.sessions.r15);
+  addSection('45min Therapy', data.sessions.r45);
+  addSection('60min Therapy', data.sessions.r60);
+  addSection('90min Therapy', data.sessions.r90);
+  addSection('Massage Therapy', data.massage);
+  if((data.products||[]).length>0) addSection('Products', data.products);
+
+  body+=`\nIf you have any questions, please don't hesitate to reach out.\n\nActiv Axion`;
+
+  const subject=encodeURIComponent(`Payroll Summary — ${therapist} — ${periodStart} to ${periodEnd}`);
+  const bodyEncoded=encodeURIComponent(body);
+  window.open(`mailto:?subject=${subject}&body=${bodyEncoded}`);
+}
+
 function downloadTherapistSummary(therapist){
   const r=lastResults[therapist];
   if(!r) return;
