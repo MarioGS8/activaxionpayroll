@@ -874,13 +874,9 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
 function copyTherapistSummary(therapist, uid){
   const data=lastTherapistData[therapist];
   if(!data) return;
-  const r=lastResults[therapist];
-  const rates=THERAPIST_RATES[therapist];
-  if(!r||!rates) return;
 
-  const fmt=(v)=>'$'+(parseFloat(v)||0).toFixed(2);
-  const fmtHrs=(v)=>(parseFloat(v)||0).toFixed(2)+' hrs';
-  const avg=calcAvgWage(rates)||1;
+
+
 
   let body=`PAYROLL SUMMARY\n`;
   body+=`${therapist}  |  ${periodStart} to ${periodEnd}\n`;
@@ -908,44 +904,6 @@ function copyTherapistSummary(therapist, uid){
   addSection('90min Therapy', data.sessions.r90);
   addSection('Massage Therapy', data.massage);
   addSection('Products', data.products||[]);
-
-  // Pay summary
-  body+='='.repeat(60)+'\n';
-  body+='PAY SUMMARY\n';
-  body+='='.repeat(60)+'\n';
-  const allAdminItems=[...data.admin,...data.rz];
-  const adminCleanHrs=(allAdminItems.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(data.treatmentDays.size*15/60)).toFixed(2);
-  const adminCleanPay=(allAdminItems.reduce((s,i)=>s+i.amount,0)+(r.cleaning||0)).toFixed(2);
-  const chartHrs=(Object.values(data.sessions).flat().length*10/60).toFixed(2);
-  const r15Hrs=(data.sessions.r15.length*30/60).toFixed(2);
-  const r45Hrs=(data.sessions.r45.length*45/60).toFixed(2);
-  const r60Hrs=(data.sessions.r60.length*60/60).toFixed(2);
-  const r90Hrs=(data.sessions.r90.length*90/60).toFixed(2);
-  const massHrs=data.massage.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0).toFixed(2);
-  const prodPay=((data.products||[]).reduce((s,i)=>s+i.amount,0)).toFixed(2);
-
-  const payLine=(label,hrs,pay)=>`${label.padEnd(25)}${hrs!==null?(hrs+' hrs').padEnd(12):''.padEnd(12)}${pay}\n`;
-  body+=payLine('Admin & Cleaning',adminCleanHrs,fmt(adminCleanPay));
-  body+=payLine('Charting',chartHrs,fmt(r.charting||0));
-  body+=payLine('15-30min Therapy',r15Hrs,fmt((r.commission>0?data.sessions.r15.reduce((s,i)=>s+i.amount,0):0)));
-  body+=payLine('45min Therapy',r45Hrs,fmt(data.sessions.r45.reduce((s,i)=>s+i.amount,0)));
-  body+=payLine('60min Therapy',r60Hrs,fmt(data.sessions.r60.reduce((s,i)=>s+i.amount,0)));
-  body+=payLine('90min Therapy',r90Hrs,fmt(data.sessions.r90.reduce((s,i)=>s+i.amount,0)));
-  if(rates.massage>0) body+=payLine('Massage Therapy',massHrs,fmt(data.massage.reduce((s,i)=>s+i.amount,0)));
-  body+=payLine('Products Commission',null,fmt(prodPay));
-  if(rates.salary>0) body+=payLine('Salary',(rates.salary/avg).toFixed(2),fmt(rates.salary));
-  body+='─'.repeat(40)+'\n';
-  body+=payLine('SUBTOTAL EARNED',null,fmt((r.commission||0)+(r.charting||0)+(r.adminPay||0)+(r.massage||0)+(r.products||0)+(r.cleaning||0)+(r.salary||0)));
-  if(r.sick>0) body+=payLine('Sick/Personal Pay',(r.sick/avg).toFixed(2),fmt(r.sick));
-  if(r.holiday>0) body+=payLine('Holiday Pay',(r.holiday/avg).toFixed(2),fmt(r.holiday));
-  if(r.vacation>0) body+=payLine('Vacation Pay',(r.vacation/avg).toFixed(2),fmt(r.vacation));
-  body+='─'.repeat(40)+'\n';
-  body+=payLine('GROSS PAYROLL',null,fmt(r.gross||0));
-  if(r.bonus>0) body+=payLine('Bonus',null,fmt(r.bonus));
-  body+=payLine('RRSP EE (6%)',null,fmt(r.rrspEE||0));
-  body+=payLine('RRSP ER (3%)',null,fmt(r.rrspER||0));
-  body+='='.repeat(40)+'\n';
-  body+=payLine('TOTAL PAYROLL',null,fmt(r.total||0));
 
   body+=`\nThank you,\nActiv Axion`;
 
@@ -1158,13 +1116,9 @@ function downloadExcel(){
 function copyTherapistSummary(therapist, uid){
   const data=lastTherapistData[therapist];
   if(!data) return;
-  const r=lastResults[therapist];
-  const rates=THERAPIST_RATES[therapist];
-  if(!r||!rates) return;
 
-  const fmt=(v)=>'$'+(parseFloat(v)||0).toFixed(2);
-  const fmtHrs=(v)=>(parseFloat(v)||0).toFixed(2)+' hrs';
-  const avg=calcAvgWage(rates)||1;
+
+
 
   let body=`PAYROLL SUMMARY\n`;
   body+=`${therapist}  |  ${periodStart} to ${periodEnd}\n`;
@@ -1192,44 +1146,6 @@ function copyTherapistSummary(therapist, uid){
   addSection('90min Therapy', data.sessions.r90);
   addSection('Massage Therapy', data.massage);
   addSection('Products', data.products||[]);
-
-  // Pay summary
-  body+='='.repeat(60)+'\n';
-  body+='PAY SUMMARY\n';
-  body+='='.repeat(60)+'\n';
-  const allAdminItems=[...data.admin,...data.rz];
-  const adminCleanHrs=(allAdminItems.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(data.treatmentDays.size*15/60)).toFixed(2);
-  const adminCleanPay=(allAdminItems.reduce((s,i)=>s+i.amount,0)+(r.cleaning||0)).toFixed(2);
-  const chartHrs=(Object.values(data.sessions).flat().length*10/60).toFixed(2);
-  const r15Hrs=(data.sessions.r15.length*30/60).toFixed(2);
-  const r45Hrs=(data.sessions.r45.length*45/60).toFixed(2);
-  const r60Hrs=(data.sessions.r60.length*60/60).toFixed(2);
-  const r90Hrs=(data.sessions.r90.length*90/60).toFixed(2);
-  const massHrs=data.massage.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0).toFixed(2);
-  const prodPay=((data.products||[]).reduce((s,i)=>s+i.amount,0)).toFixed(2);
-
-  const payLine=(label,hrs,pay)=>`${label.padEnd(25)}${hrs!==null?(hrs+' hrs').padEnd(12):''.padEnd(12)}${pay}\n`;
-  body+=payLine('Admin & Cleaning',adminCleanHrs,fmt(adminCleanPay));
-  body+=payLine('Charting',chartHrs,fmt(r.charting||0));
-  body+=payLine('15-30min Therapy',r15Hrs,fmt((r.commission>0?data.sessions.r15.reduce((s,i)=>s+i.amount,0):0)));
-  body+=payLine('45min Therapy',r45Hrs,fmt(data.sessions.r45.reduce((s,i)=>s+i.amount,0)));
-  body+=payLine('60min Therapy',r60Hrs,fmt(data.sessions.r60.reduce((s,i)=>s+i.amount,0)));
-  body+=payLine('90min Therapy',r90Hrs,fmt(data.sessions.r90.reduce((s,i)=>s+i.amount,0)));
-  if(rates.massage>0) body+=payLine('Massage Therapy',massHrs,fmt(data.massage.reduce((s,i)=>s+i.amount,0)));
-  body+=payLine('Products Commission',null,fmt(prodPay));
-  if(rates.salary>0) body+=payLine('Salary',(rates.salary/avg).toFixed(2),fmt(rates.salary));
-  body+='─'.repeat(40)+'\n';
-  body+=payLine('SUBTOTAL EARNED',null,fmt((r.commission||0)+(r.charting||0)+(r.adminPay||0)+(r.massage||0)+(r.products||0)+(r.cleaning||0)+(r.salary||0)));
-  if(r.sick>0) body+=payLine('Sick/Personal Pay',(r.sick/avg).toFixed(2),fmt(r.sick));
-  if(r.holiday>0) body+=payLine('Holiday Pay',(r.holiday/avg).toFixed(2),fmt(r.holiday));
-  if(r.vacation>0) body+=payLine('Vacation Pay',(r.vacation/avg).toFixed(2),fmt(r.vacation));
-  body+='─'.repeat(40)+'\n';
-  body+=payLine('GROSS PAYROLL',null,fmt(r.gross||0));
-  if(r.bonus>0) body+=payLine('Bonus',null,fmt(r.bonus));
-  body+=payLine('RRSP EE (6%)',null,fmt(r.rrspEE||0));
-  body+=payLine('RRSP ER (3%)',null,fmt(r.rrspER||0));
-  body+='='.repeat(40)+'\n';
-  body+=payLine('TOTAL PAYROLL',null,fmt(r.total||0));
 
   body+=`\nThank you,\nActiv Axion`;
 
@@ -1408,13 +1324,9 @@ function downloadExcel(){
 function copyTherapistSummary(therapist, uid){
   const data=lastTherapistData[therapist];
   if(!data) return;
-  const r=lastResults[therapist];
-  const rates=THERAPIST_RATES[therapist];
-  if(!r||!rates) return;
 
-  const fmt=(v)=>'$'+(parseFloat(v)||0).toFixed(2);
-  const fmtHrs=(v)=>(parseFloat(v)||0).toFixed(2)+' hrs';
-  const avg=calcAvgWage(rates)||1;
+
+
 
   let body=`PAYROLL SUMMARY\n`;
   body+=`${therapist}  |  ${periodStart} to ${periodEnd}\n`;
@@ -1442,44 +1354,6 @@ function copyTherapistSummary(therapist, uid){
   addSection('90min Therapy', data.sessions.r90);
   addSection('Massage Therapy', data.massage);
   addSection('Products', data.products||[]);
-
-  // Pay summary
-  body+='='.repeat(60)+'\n';
-  body+='PAY SUMMARY\n';
-  body+='='.repeat(60)+'\n';
-  const allAdminItems=[...data.admin,...data.rz];
-  const adminCleanHrs=(allAdminItems.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(data.treatmentDays.size*15/60)).toFixed(2);
-  const adminCleanPay=(allAdminItems.reduce((s,i)=>s+i.amount,0)+(r.cleaning||0)).toFixed(2);
-  const chartHrs=(Object.values(data.sessions).flat().length*10/60).toFixed(2);
-  const r15Hrs=(data.sessions.r15.length*30/60).toFixed(2);
-  const r45Hrs=(data.sessions.r45.length*45/60).toFixed(2);
-  const r60Hrs=(data.sessions.r60.length*60/60).toFixed(2);
-  const r90Hrs=(data.sessions.r90.length*90/60).toFixed(2);
-  const massHrs=data.massage.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0).toFixed(2);
-  const prodPay=((data.products||[]).reduce((s,i)=>s+i.amount,0)).toFixed(2);
-
-  const payLine=(label,hrs,pay)=>`${label.padEnd(25)}${hrs!==null?(hrs+' hrs').padEnd(12):''.padEnd(12)}${pay}\n`;
-  body+=payLine('Admin & Cleaning',adminCleanHrs,fmt(adminCleanPay));
-  body+=payLine('Charting',chartHrs,fmt(r.charting||0));
-  body+=payLine('15-30min Therapy',r15Hrs,fmt((r.commission>0?data.sessions.r15.reduce((s,i)=>s+i.amount,0):0)));
-  body+=payLine('45min Therapy',r45Hrs,fmt(data.sessions.r45.reduce((s,i)=>s+i.amount,0)));
-  body+=payLine('60min Therapy',r60Hrs,fmt(data.sessions.r60.reduce((s,i)=>s+i.amount,0)));
-  body+=payLine('90min Therapy',r90Hrs,fmt(data.sessions.r90.reduce((s,i)=>s+i.amount,0)));
-  if(rates.massage>0) body+=payLine('Massage Therapy',massHrs,fmt(data.massage.reduce((s,i)=>s+i.amount,0)));
-  body+=payLine('Products Commission',null,fmt(prodPay));
-  if(rates.salary>0) body+=payLine('Salary',(rates.salary/avg).toFixed(2),fmt(rates.salary));
-  body+='─'.repeat(40)+'\n';
-  body+=payLine('SUBTOTAL EARNED',null,fmt((r.commission||0)+(r.charting||0)+(r.adminPay||0)+(r.massage||0)+(r.products||0)+(r.cleaning||0)+(r.salary||0)));
-  if(r.sick>0) body+=payLine('Sick/Personal Pay',(r.sick/avg).toFixed(2),fmt(r.sick));
-  if(r.holiday>0) body+=payLine('Holiday Pay',(r.holiday/avg).toFixed(2),fmt(r.holiday));
-  if(r.vacation>0) body+=payLine('Vacation Pay',(r.vacation/avg).toFixed(2),fmt(r.vacation));
-  body+='─'.repeat(40)+'\n';
-  body+=payLine('GROSS PAYROLL',null,fmt(r.gross||0));
-  if(r.bonus>0) body+=payLine('Bonus',null,fmt(r.bonus));
-  body+=payLine('RRSP EE (6%)',null,fmt(r.rrspEE||0));
-  body+=payLine('RRSP ER (3%)',null,fmt(r.rrspER||0));
-  body+='='.repeat(40)+'\n';
-  body+=payLine('TOTAL PAYROLL',null,fmt(r.total||0));
 
   body+=`\nThank you,\nActiv Axion`;
 
