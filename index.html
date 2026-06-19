@@ -293,7 +293,7 @@ function getDurationRate(rates,mins){
   return rates.r90;
 }
 
-function classifyAndEarn(cat,name,subtotal,rates,productCat){
+function classifyAndEarn(cat,name,subtotal,rates,productCat,serviceTime){
   if(productCat) return {commission:subtotal*0.10,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Product (10%)'};
   if(isProduct(cat,name)) return {commission:subtotal*0.10,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Product (10%)'};
   if(isCancellation(cat,name)) return {commission:0,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Cancellation',flag:true,totalWithTax:0};
@@ -304,24 +304,94 @@ function classifyAndEarn(cat,name,subtotal,rates,productCat){
   if(isAdminHours(cat,name)){
     if(/sick|personal day/i.test(name)) return {commission:0,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Skip'};
     if(/neurotracker.*consult/i.test(name)) return {commission:0,charting:0,admin:parseFloat((0.25*rates.admin).toFixed(2)),massage:0,rz:0,isTreat:false,label:'Admin 15min'};
-    const mins=parseDuration(name)||60;
+    const mins=serviceTime||parseDuration(name)||60;
     const adminHrs=parseFloat((mins/60).toFixed(2));
     return {commission:0,charting:0,admin:parseFloat((adminHrs*rates.admin).toFixed(2)),massage:0,rz:0,isTreat:false,label:`Admin ${mins}min`};
   }
   if(isMassage(name)){
-    const mins=parseDuration(name)||60;
-    const massHrs=parseFloat((mins/60).toFixed(2));
-    return {commission:0,charting:0,admin:0,massage:parseFloat((massHrs*rates.massage).toFixed(2)),rz:0,isTreat:true,label:`Massage ${mins}min`};
+    let rawMins=parseDuration(name)||serviceTime||60;
+    // Auto-correct Noterro checkout inflation
+    if(rawMins===45) rawMins=30;
+    else if(rawMins===75) rawMins=60;
+    else if(rawMins===105) rawMins=90;
+    const massHrs=parseFloat((rawMins/60).toFixed(2));
+    return {commission:0,charting:0,admin:0,massage:parseFloat((massHrs*rates.massage).toFixed(2)),rz:0,isTreat:true,label:`Massage ${rawMins}min`,massageMins:rawMins};
   }
   if(isATMassage(name)){
-    const mins=parseDuration(name)||45;
+    const mins=serviceTime||parseDuration(name)||45;
     return {commission:getDurationRate(rates,mins),charting:rates.admin*(10/60),admin:0,massage:0,rz:0,isTreat:true,label:`AT (${mins}min)`};
   }
-  const mins=parseDuration(name);
+  const mins=serviceTime||parseDuration(name);
   if(mins){
     return {commission:getDurationRate(rates,mins),charting:rates.admin*(10/60),admin:0,massage:0,rz:0,isTreat:true,label:`${mins}min`};
   }
   return {commission:0,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Unknown',flag:true};
+}
+
+function correctMassageMins(raw){
+  if(raw===45) return 30;
+  if(raw===75) return 60;
+  if(raw===105) return 90;
+  return raw;
+}
+
+function makeMassageHeader(){
+  const headers=['Invoice #','Invoice Date','Service Category','Line Item Name','Service Time','Duration','Service Date','Qty','Practitioner','Discount Name','Disc Amt','Subtotal','Tax','Total','Balance','Patient Name','Move to'];
+  return `<tr style="border-bottom:0.5px solid rgba(0,0,0,0.15)">${headers.map(h=>`<th style="font-size:11px;color:#5f5e5a;font-weight:500;padding:4px 8px 6px 0;white-space:nowrap">${h}</th>`).join('')}</tr>`;
+}
+
+function makeMassageRows(items, uid, therapist, rates){
+  const colStyle='style="color:#5f5e5a;font-size:11px;white-space:nowrap;padding:4px 8px 4px 0"';
+  return items.map(i=>{
+    const hasBalance=parseFloat(i.balance||0)>0;
+    const rowStyle=hasBalance?'style="background:#fff0f0"':'';
+    const corrected=i.massageMins||correctMassageMins(parseFloat(i.serviceTime)||60)||60;
+    return `<tr ${rowStyle}>
+      <td ${colStyle}>${i.invoice}</td>
+      <td ${colStyle}>${i.invoiceDate}</td>
+      <td ${colStyle}>${i.serviceCategory||''}</td>
+      <td style="color:#5f5e5a;font-size:11px;padding:4px 8px 4px 0;min-width:220px">${i.name}</td>
+      <td ${colStyle}>${i.serviceTime}</td>
+      <td style="padding:4px 4px 4px 0"><input type="number" min="5" step="5" value="${corrected}" style="width:55px;padding:3px 5px;border:0.5px solid rgba(0,0,0,0.25);border-radius:5px;font-size:11px;background:#fffde7" onchange="updateMassageDuration('${therapist}','${uid}','${i.invoice}',this.value,${rates.massage})"></td>
+      <td ${colStyle}>${i.date}</td>
+      <td ${colStyle}>${i.quantity}</td>
+      <td ${colStyle}>${i.practitioner}</td>
+      <td ${colStyle}>${i.discountName}</td>
+      <td ${colStyle}>${i.discountAmount}</td>
+      <td ${colStyle}>${i.subtotal}</td>
+      <td ${colStyle}>${i.taxAmount}</td>
+      <td ${colStyle}>${i.total}</td>
+      <td ${colStyle}>${i.balance}</td>
+      <td ${colStyle}>${i.patient}</td>
+      <td style="padding:4px 8px 4px 0"><select style="font-size:11px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.2);border-radius:4px;background:#fff" onchange="moveRow('${therapist}','${uid}',this,'massage','${i.invoice}')"><option value="">Move to...</option><option value="admin">Admin / Recovery Zone</option><option value="r15">15-30min Sessions</option><option value="r45">45min Sessions</option><option value="r60">60min Sessions</option><option value="r90">90min Sessions</option></select></td>
+    </tr>`;
+  }).join('');
+}
+
+function updateMassageDuration(therapist, uid, invoiceNum, newMins, massageRate){
+  const data=lastTherapistData[therapist];
+  if(!data) return;
+  const item=data.massage.find(i=>i.invoice===invoiceNum);
+  if(!item) return;
+  const mins=parseFloat(newMins)||60;
+  const newAmt=parseFloat((parseFloat((mins/60).toFixed(2))*massageRate).toFixed(2));
+  item.amount=newAmt;
+  item.massageMins=mins;
+  // Recalc totals
+  const totalMassage=data.massage.reduce((s,i)=>s+i.amount,0);
+  lastResults[therapist].massage=totalMassage;
+  recalcTotals(uid,therapist);
+}
+
+function renderMassageSection(data,rates,uid,therapist,sumItems){
+  if(!data.massage||data.massage.length===0) return '';
+  const totalMin=data.massage.reduce((s,i)=>s+(i.massageMins||parseFloat(i.serviceTime)||0),0);
+  const totalQty=data.massage.reduce((s,i)=>s+(parseFloat(i.quantity)||0),0);
+  const totalPay=sumItems(data.massage).toFixed(2);
+  return '<tr class="section-header"><td colspan="17" style="text-align:left">Massage Therapy ('+data.massage.length+' · $'+sumItems(data.massage).toFixed(2)+')</td></tr>'
+    +makeMassageHeader()
+    +makeMassageRows(data.massage,uid,therapist,rates)
+    +'<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Total: '+totalMin+' min · Qty: '+totalQty+'</td><td colspan="5" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">'+rates.massage.toFixed(2)+'/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$'+totalPay+'</td></tr>';
 }
 
 let csvData=null;
@@ -376,7 +446,8 @@ function calculate(){
     const productCategory=(row['Product Category']||'').trim();
     const name=(row['Line Item Name']||'').trim();
     const subtotal=parseFloat(row['Subtotal'])||0;
-    const earn=classifyAndEarn(cat,name,subtotal,rates,productCategory);
+    const serviceTimeVal=parseFloat((row['Service Time']||'').trim())||0;
+    const earn=classifyAndEarn(cat,name,subtotal,rates,productCategory,serviceTimeVal);
     if(earn.label==='Skip') continue;
     const totalWithTax=parseFloat(row['Total'])||0;
     if(earn.flag){ therapistData[practitioner].flags.push({date:rawDate,name,totalWithTax}); continue; }
@@ -409,7 +480,7 @@ function calculate(){
     if(earn.label==='Product (10%)'){ rawEntry.amount=earn.commission; d.products.push(rawEntry); }
     else if(earn.admin>0){ rawEntry.amount=earn.admin; d.admin.push(rawEntry); }
     else if(earn.rz>0){ rawEntry.amount=earn.rz; d.rz.push(rawEntry); }
-    else if(earn.massage>0){ rawEntry.amount=earn.massage; d.massage.push(rawEntry); }
+    else if(earn.massage>0){ rawEntry.amount=earn.massage; rawEntry.massageMins=earn.massageMins||parseDuration(name)||60; d.massage.push(rawEntry); }
     else if(earn.commission>0){
       rawEntry.amount=earn.commission;
       const mins=parseDuration(name)||60;
@@ -528,135 +599,430 @@ function calculate(){
             ${data.sessions.r45.length>0?`<tr class="section-header"><td colspan="14">45min Sessions (${data.sessions.r45.length} · $${sumItems(data.sessions.r45).toFixed(2)})</td></tr>${makeHeader()}${makeRows(data.sessions.r45,"r45")}<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="5" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Total: ${data.sessions.r45.reduce((s,i)=>s+(parseFloat(i.serviceTime)||0),0)} min · Qty: ${data.sessions.r45.reduce((s,i)=>s+(parseFloat(i.quantity)||0),0)}</td><td colspan="5" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">${rates.r45.toFixed(2)} (${(rates.r45/45*60).toFixed(2)}/hr)</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">${sumItems(data.sessions.r45).toFixed(2)}</td></tr>`:''}
             ${data.sessions.r60.length>0?`<tr class="section-header"><td colspan="14">60min Sessions (${data.sessions.r60.length} · $${sumItems(data.sessions.r60).toFixed(2)})</td></tr>${makeHeader()}${makeRows(data.sessions.r60,"r60")}<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="5" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Total: ${data.sessions.r60.reduce((s,i)=>s+(parseFloat(i.serviceTime)||0),0)} min · Qty: ${data.sessions.r60.reduce((s,i)=>s+(parseFloat(i.quantity)||0),0)}</td><td colspan="5" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">${rates.r60.toFixed(2)} (${(rates.r60/60*60).toFixed(2)}/hr)</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">${sumItems(data.sessions.r60).toFixed(2)}</td></tr>`:''}
             ${data.sessions.r90.length>0?`<tr class="section-header"><td colspan="14">90min Sessions (${data.sessions.r90.length} · $${sumItems(data.sessions.r90).toFixed(2)})</td></tr>${makeHeader()}${makeRows(data.sessions.r90,"r90")}<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="5" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Total: ${data.sessions.r90.reduce((s,i)=>s+(parseFloat(i.serviceTime)||0),0)} min · Qty: ${data.sessions.r90.reduce((s,i)=>s+(parseFloat(i.quantity)||0),0)}</td><td colspan="5" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">${rates.r90.toFixed(2)} (${(rates.r90/90*60).toFixed(2)}/hr)</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">${sumItems(data.sessions.r90).toFixed(2)}</td></tr>`:''}
-            ${data.massage.length>0?`<tr class="section-header"><td colspan="14">Massage Therapy (${data.massage.length} · $${sumItems(data.massage).toFixed(2)})</td></tr><tr><td colspan="7" style="font-size:11px;color:#185fa5;padding:3px 0 3px 8px">Hourly rate: $${rates.massage.toFixed(2)}/hr (prorated by duration)</td></tr>${makeHeader()}${makeRows(data.massage,"massage")}<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="5" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Total: ${data.massage.reduce((s,i)=>s+(parseFloat(i.serviceTime)||0),0)} min · Qty: ${data.massage.reduce((s,i)=>s+(parseFloat(i.quantity)||0),0)}</td><td colspan="5" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">${rates.massage.toFixed(2)}/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$${sumItems(data.massage).toFixed(2)}</td></tr>`:''}
-            
-            ${data.rz.length>0?`<tr class="section-header"><td colspan="14" style="text-align:left">Recovery Zone (${data.rz.length} lines · $${sumItems(data.rz).toFixed(2)})</td></tr>${makeHeader()}${makeRows(data.rz,"admin")}<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">RZ Total: ${data.rz.length} sessions</td><td colspan="2" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">flat rate ($6/$12)</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$${sumItems(data.rz).toFixed(2)}</td></tr>`:''}
-            ${`<tr class="section-header"><td colspan="14">Products (${(data.products||[]).length} · $${((data.products||[]).reduce((s,i)=>s+i.amount,0)).toFixed(2)})</td></tr><tr><td colspan="7" style="font-size:11px;color:#185fa5;padding:3px 0 3px 8px">Commission: 10% of subtotal</td></tr>${(data.products||[]).length>0?makeHeader()+makeRows(data.products,'product'):'<tr><td colspan="14" style="color:#5f5e5a;font-size:11px;padding:4px 0 4px 8px">No products this period</td></tr>'}`}\n            ${salary>0?`<tr class="section-header"><td colspan="2">Salary</td></tr><tr><td style="padding-left:8px">Per period</td><td>$${salary.toFixed(2)}</td></tr>`:''}
-            <tr style="background:#1a1a18"><td colspan="14" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#fff;letter-spacing:0.02em">${therapist} — Summary</td></tr>
-            ${(()=>{
-              const allAdminItems=[...data.admin,...data.rz];
-              const adminCleanHrs=(allAdmin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(data.treatmentDays.size*15/60)).toFixed(2);
-              const adminCleanPay=(sumItems(allAdminItems)+cleaning).toFixed(2);
-              const chartHrs=(Object.values(data.sessions).flat().length*10/60).toFixed(2);
-              const chartPay=totalCharting.toFixed(2);
-              const r15Hrs=(data.sessions.r15.length*30/60).toFixed(2);
-              const r15Pay=sumItems(data.sessions.r15).toFixed(2);
-              const r45Hrs=(data.sessions.r45.length*45/60).toFixed(2);
-              const r45Pay=sumItems(data.sessions.r45).toFixed(2);
-              const r60Hrs=(data.sessions.r60.length*60/60).toFixed(2);
-              const r60Pay=sumItems(data.sessions.r60).toFixed(2);
-              const r90Hrs=(data.sessions.r90.length*90/60).toFixed(2);
-              const r90Pay=sumItems(data.sessions.r90).toFixed(2);
-              const massHrs=data.massage.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0).toFixed(2);
-              const massPay=sumItems(data.massage).toFixed(2);
-              const prodPay=(data.products||[]).reduce((s,i)=>s+i.amount,0).toFixed(2);
-              const salPay=salary.toFixed(2);
-              const summaryRow=(label,rate,hrs,pay)=>`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)">
-                <td colspan="7" style="font-size:12px;padding:4px 0 4px 8px;color:#1a1a18">${label}</td>
-                <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5">${rate!==null?'$'+rate+'/hr':''}</td>
-                <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a">${hrs!==null?hrs+' hrs':''}</td>
-                <td colspan="2" style="font-size:12px;text-align:right;font-weight:500">$${pay}</td>
-              </tr>`;
-              let rows='';
-              rows+=summaryRow('Admin & Cleaning',(rates.admin).toFixed(2),adminCleanHrs,adminCleanPay);
-              rows+=summaryRow('Charting',(rates.admin).toFixed(2),chartHrs,chartPay);
-              rows+=summaryRow('15-30min Therapy',(rates.r30/30*60).toFixed(2),r15Hrs,r15Pay);
-              rows+=summaryRow('45min Therapy',(rates.r45/45*60).toFixed(2),r45Hrs,r45Pay);
-              rows+=summaryRow('60min Therapy',(rates.r60/60*60).toFixed(2),r60Hrs,r60Pay);
-              rows+=summaryRow('90min Therapy',(rates.r90/90*60).toFixed(2),r90Hrs,r90Pay);
-              if(rates.massage>0) rows+=summaryRow('Massage Therapy',(rates.massage).toFixed(2),massHrs,massPay);
-              rows+=summaryRow('Recovery Zone',null,null,sumItems(data.rz).toFixed(2));
-              rows+=summaryRow('Products Commission',null,null,prodPay);
-              if(salary>0) rows+=summaryRow('Salary',(rates.salary?calcAvgWage(rates).toFixed(2):null),(rates.salary?(rates.salary/calcAvgWage(rates)).toFixed(2):null),salPay);
-              return rows;
-            })()}
-            <tr style="border-top:1px solid rgba(0,0,0,0.15);background:#e8f5e9">
-              <td colspan="8" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#0f6e56">Subtotal earned</td>
-              <td colspan="4" style="font-size:12px;color:#0f6e56;text-align:right">${(
-                (allAdmin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(data.treatmentDays.size*15/60)) +
-                (Object.values(data.sessions).flat().length*10/60) +
-                (data.sessions.r15.length*30/60)+(data.sessions.r45.length*45/60)+
-                (data.sessions.r60.length*60/60)+(data.sessions.r90.length*90/60)+
-                data.massage.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)
-              ).toFixed(2)} hrs total</td>
-              <td colspan="2" style="font-size:13px;font-weight:600;text-align:right;padding:8px 0;color:#0f6e56" id="subtotal-earned-${uid}">$0.00</td>
-            </tr>
-            <tr class="section-header"><td colspan="14">Manual entries</td></tr>
-            <tr>
-              <td colspan="5">Sick / Personal Pay</td>
-              <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="0" id="sick-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px"></td>
-              <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">@ $${calcAvgWage(rates).toFixed(2)}/hr</td>
-              <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="sick-hrs-${uid}">0.00 hrs</td>
-            </tr>
-            <tr>
-              <td colspan="5">Holiday Pay</td>
-              <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="0" id="holiday-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px"></td>
-              <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">@ $${calcAvgWage(rates).toFixed(2)}/hr</td>
-              <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="holiday-hrs-${uid}">0.00 hrs</td>
-            </tr>
-            <tr>
-              <td colspan="5">Vacation Pay</td>
-              <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="0" id="vacation-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px"></td>
-              <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">@ $${calcAvgWage(rates).toFixed(2)}/hr</td>
-              <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="vacation-hrs-${uid}">0.00 hrs</td>
-            </tr>
-            <tr class="total-row"><td>Gross Payroll</td><td id="gross-row-${uid}">$0.00</td></tr>
-            <tr class="section-header"><td colspan="2">RRSP</td></tr>
-            <tr class="rrsp-row"><td>RRSP EE (6%)</td><td id="rrsp-ee-${uid}">$0.00</td></tr>
-            <tr class="rrsp-row"><td>RRSP ER (3%)</td><td id="rrsp-er-${uid}">$0.00</td></tr>
-            <tr class="section-header"><td colspan="2">Bonus (excluded from RRSP)</td></tr>
-            <tr class="bonus-row"><td>Bonus</td><td><input type="number" class="manual-input" min="0" step="0.01" value="0" id="bonus-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="background:#faeeda"></td></tr>
-            <tr class="grand-total-row"><td>Total Payroll</td><td id="total-${uid}">$0.00</td></tr>
-          </tbody>
-        </table>
-        </div>
-        ${data.flags.length>0?`
-        <div style="margin-top:1rem;padding:12px;background:#faeeda;border-radius:8px;">
-          <p style="font-size:12px;color:#854f0b;font-weight:500;margin-bottom:8px">⚠ Select service type for each cancellation fee:</p>
-          <table class="breakdown-table">
-            <thead><tr><th>Date</th><th>Total incl. tax</th><th>Service type</th><th style="text-align:right">Commission</th></tr></thead>
-            <tbody>
-              ${data.flags.map((f,idx)=>{
-                const opts=[
-                  '<option value="">-- Select --</option>',
-                  ...[15,30,45,60,90].map(m=>`<option value="${getDurationRate(rates,m)}">${m}min ($${getDurationRate(rates,m).toFixed(2)})</option>`),
-                  ...(rates.massage>0?[30,45,60,90].map(m=>`<option value="${(rates.massage*m/60).toFixed(2)}">Massage ${m}min ($${(rates.massage*m/60).toFixed(2)})</option>`):[])
-                ].join('');
-                return `<tr>
-                  <td style="white-space:nowrap">${f.date}</td>
-                  <td style="color:#ba7517">$${f.totalWithTax.toFixed(2)}</td>
-                  <td><select class="canc-select" id="canc-${uid}-${idx}" onchange="recalcTotals('${uid}','${therapist}')">${opts}</select></td>
-                  <td id="canc-val-${uid}-${idx}" style="color:#ba7517;text-align:right">$0.00</td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>`:''}
-      ${dateMismatches.length>0?`
-      <div style="margin-top:1rem;padding:12px;background:#fcebeb;border-radius:8px;">
-        <p style="font-size:12px;color:#a32d2d;font-weight:500;margin-bottom:8px">⚠ Date mismatch — Invoice Date ≠ Service Date (${dateMismatches.length} line${dateMismatches.length>1?'s':''})</p>
-        <table class="breakdown-table">
-          <thead><tr><th>Invoice #</th><th>Invoice Date</th><th>Service Date</th><th>Service</th><th>Patient</th></tr></thead>
-          <tbody>
-            ${dateMismatches.map(m=>`<tr style="color:#a32d2d"><td style="font-size:12px">${m.invoice}</td><td style="font-size:12px">${m.invoiceDate}</td><td style="font-size:12px">${m.serviceDate}</td><td style="font-size:12px">${m.name.length>35?m.name.substring(0,35)+'…':m.name}</td><td style="font-size:12px">${m.patient}</td></tr>`).join('')}
-          </tbody>
-        </table>
-      </div>`:''}
-      <div style="margin-top:1rem;">
-        <p style="font-size:12px;color:#5f5e5a;margin-bottom:4px;font-weight:500">Notes</p>
-        <textarea class="notes-area" id="notes-${uid}" placeholder="Add any notes for your bookkeeper..."></textarea>
-      </div>
-      <div style="margin-top:0.75rem;display:flex;gap:8px">
-        <button onclick="downloadTherapistSummary('${therapist}')" style="padding:8px 16px;background:#185fa5;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer;flex:1">⬇ Download summary</button>
-        <button onclick="copyTherapistSummary('${therapist}','${uid}')" id="copy-btn-${uid}" style="padding:8px 16px;background:#0f6e56;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer;flex:1">📋 Copy summary text</button>
-      </div>
-      </div>`;
-    resultsEl.appendChild(card);
-    recalcTotals(uid,therapist);
-  }
+            ${renderMassageSection(data,rates,uid,therapist,sumItems)}TYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payroll Calculator</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f3; color: #1a1a18; min-height: 100vh; padding: 2rem 1rem; }
+  .container { max-width: 1400px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 500; margin-bottom: 0.25rem; }
+  .subtitle { font-size: 14px; color: #5f5e5a; margin-bottom: 2rem; }
+  .card { background: #fff; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; }
+  .card-title { font-size: 13px; font-weight: 500; color: #5f5e5a; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 1rem; }
+  .card-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+  @media(max-width:600px){ .form-row { grid-template-columns: 1fr; } }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  label { font-size: 13px; color: #5f5e5a; }
+  input[type="date"], select { padding: 8px 10px; border: 0.5px solid rgba(0,0,0,0.2); border-radius: 8px; font-size: 14px; background: #fff; color: #1a1a18; width: 100%; }
+  input[type="date"]:focus, select:focus { outline: none; border-color: rgba(0,0,0,0.4); }
+  .upload-zone { border: 1.5px dashed rgba(0,0,0,0.2); border-radius: 10px; padding: 2rem; text-align: center; cursor: pointer; transition: border-color 0.15s; background: #fafafa; }
+  .upload-zone:hover, .upload-zone.dragover { border-color: rgba(0,0,0,0.4); background: #f0f0ee; }
+  .upload-zone p { font-size: 14px; color: #5f5e5a; }
+  .upload-zone .filename { font-size: 13px; color: #3b6d11; font-weight: 500; margin-top: 0.5rem; }
+  input[type="file"] { display: none; }
+  button.run-btn { width: 100%; padding: 11px; background: #1a1a18; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 500; cursor: pointer; margin-top: 0.5rem; transition: opacity 0.15s; }
+  button.run-btn:hover { opacity: 0.85; }
+  button.run-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .settings-toggle { font-size: 13px; color: #5f5e5a; cursor: pointer; background: none; border: 0.5px solid rgba(0,0,0,0.15); border-radius: 6px; padding: 5px 12px; }
+  .settings-toggle:hover { background: #f5f5f3; }
+  .settings-section { display: none; margin-top: 1rem; }
+  .settings-section.open { display: block; }
+  .rates-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .rates-table th { text-align: left; color: #5f5e5a; font-weight: 500; padding: 6px 8px 10px; border-bottom: 0.5px solid rgba(0,0,0,0.12); font-size: 12px; white-space: nowrap; }
+  .rates-table td { padding: 5px 4px; border-bottom: 0.5px solid rgba(0,0,0,0.05); vertical-align: middle; }
+  .rates-table tr:last-child td { border-bottom: none; }
+  .rates-table input[type="text"], .rates-table input[type="number"] { width: 100%; padding: 5px 7px; border: 0.5px solid rgba(0,0,0,0.15); border-radius: 6px; font-size: 13px; background: #fff; color: #1a1a18; min-width: 60px; }
+  .rates-table input[type="text"] { min-width: 130px; }
+  .rates-table input:focus { outline: none; border-color: rgba(0,0,0,0.35); }
+  .save-btn { margin-top: 1rem; padding: 7px 16px; background: #1a1a18; color: #fff; border: none; border-radius: 7px; font-size: 13px; cursor: pointer; }
+  .add-row-btn { margin-top: 0.75rem; padding: 6px 14px; background: none; border: 0.5px solid rgba(0,0,0,0.2); border-radius: 7px; font-size: 13px; cursor: pointer; color: #1a1a18; }
+  .del-btn { background: none; border: none; cursor: pointer; color: #a32d2d; font-size: 16px; padding: 2px 6px; }
+  .save-confirm { font-size: 12px; color: #3b6d11; margin-left: 10px; opacity: 0; transition: opacity 0.3s; }
+  .save-confirm.show { opacity: 1; }
+  .settings-note { font-size: 12px; color: #5f5e5a; margin-top: 0.75rem; line-height: 1.5; }
+  .results { margin-top: 1.5rem; }
+  .result-card { background: #fff; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 12px; margin-bottom: 1rem; overflow: hidden; }
+  .result-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.25rem; border-bottom: 0.5px solid rgba(0,0,0,0.08); background: #1a1a18; }
+  .therapist-name { font-size: 16px; font-weight: 500; color: #fff; }
+  .gross-amount { font-size: 20px; font-weight: 500; color: #a8d5a2; }
+  .gross-label { font-size: 11px; color: rgba(255,255,255,0.6); text-align: right; }
+  .result-body { padding: 1rem 1.25rem; }
+  .breakdown-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .breakdown-table th { text-align: left; color: #5f5e5a; font-weight: 500; padding: 4px 8px 8px 0; border-bottom: 0.5px solid rgba(0,0,0,0.1); }
+  .breakdown-table th:last-child { text-align: right; }
+  .breakdown-table td { padding: 5px 8px 5px 0; border-bottom: 0.5px solid rgba(0,0,0,0.05); color: #1a1a18; vertical-align: top; }
+  .breakdown-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  .breakdown-table tr:last-child td { border-bottom: none; }
+  .section-header td { font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #5f5e5a; padding-top: 12px; border-bottom: 0.5px solid rgba(0,0,0,0.1) !important; text-align: left; }
+  .total-row td { font-weight: 600; padding-top: 10px; border-top: 0.5px solid rgba(0,0,0,0.15) !important; border-bottom: none !important; color: #0f6e56; font-size: 14px; }
+  .rrsp-row td { color: #185fa5; }
+  .bonus-row td { color: #854f0b; }
+  .manual-input { width: 100px; padding: 4px 8px; border: 0.5px solid rgba(0,0,0,0.2); border-radius: 6px; font-size: 13px; text-align: right; background: #fffde7; }
+  .manual-input:focus { outline: none; border-color: rgba(0,0,0,0.4); }
+  .grand-total-row td { font-weight: 700; font-size: 15px; color: #1a1a18; padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.2) !important; border-bottom: none !important; }
+  .download-btn { width: 100%; padding: 11px; background: #0f6e56; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 500; cursor: pointer; margin-top: 1rem; transition: opacity 0.15s; }
+  .download-btn:hover { opacity: 0.85; }
+  .download-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .error-msg { background: #fcebeb; color: #a32d2d; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-top: 0.75rem; }
+  .canc-select { padding:4px 7px;border:0.5px solid rgba(186,119,23,0.5);border-radius:6px;font-size:12px;background:#faeeda;color:#633806;width:200px; }
+  .notes-area { width:100%;padding:8px 10px;border:0.5px solid rgba(0,0,0,0.15);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;min-height:60px;margin-top:0.75rem;background:#fafafa;color:#1a1a18; }
+  .notes-area:focus { outline:none;border-color:rgba(0,0,0,0.35); }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Payroll calculator</h1>
+  <p class="subtitle">Activ Axion · Commission-based payroll</p>
 
-  document.getElementById('download-btns').style.display='block';
+  <!-- Rates -->
+  <div class="card">
+    <div class="card-title-row">
+      <div class="card-title" style="margin-bottom:0">Therapist rates</div>
+      <button class="settings-toggle" onclick="toggleSettings()">Edit rates</button>
+    </div>
+    <div class="settings-section" id="settings-section">
+      <p style="font-size:13px;color:#5f5e5a;margin-bottom:0.75rem;">Edit rates directly. Salary is per pay period. Click Save & export, then load the file next session.</p>
+      <div style="margin-bottom:1rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="font-size:13px;color:#5f5e5a">Show therapists:</label>
+        <div id="therapist-filter" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        <button onclick="toggleAllTherapists(true)" style="font-size:12px;padding:3px 10px;border:0.5px solid rgba(0,0,0,0.2);border-radius:5px;background:none;cursor:pointer">All</button>
+        <button onclick="toggleAllTherapists(false)" style="font-size:12px;padding:3px 10px;border:0.5px solid rgba(0,0,0,0.2);border-radius:5px;background:none;cursor:pointer">None</button>
+      </div>
+      <div style="overflow-x:auto">
+      <table class="rates-table">
+        <thead>
+          <tr>
+            <th>Avg Wage/hr</th><th>Name</th><th>15min</th><th>30min</th><th>45min</th><th>60min</th><th>90min</th>
+            <th>Massage/hr</th><th>Admin/hr</th><th>RZ 15min</th><th>RZ 30min+</th><th>Salary/period</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="rates-tbody"></tbody>
+      </table>
+      </div>
+      <button class="add-row-btn" onclick="addTherapistRow()">+ Add therapist</button>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:1rem;flex-wrap:wrap">
+        <button class="save-btn" onclick="saveRates()">Save &amp; export rates</button>
+        <label style="padding:7px 14px;background:none;border:0.5px solid rgba(0,0,0,0.2);border-radius:7px;font-size:13px;cursor:pointer;color:#1a1a18">
+          Load saved rates<input type="file" accept=".json" style="display:none" onchange="loadRatesFile(this)">
+        </label>
+        <span class="save-confirm" id="save-confirm">Saved — check your downloads</span>
+      </div>
+      <p class="settings-note">⚠ To keep changes: Save &amp; export, store rates.json in Google Drive, load it each session.</p>
+    </div>
+  </div>
+
+  <!-- Pay period -->
+  <div class="card">
+    <div class="card-title">Pay period</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Start date</label>
+        <input type="date" id="period-start">
+      </div>
+      <div class="form-group">
+        <label>End date</label>
+        <input type="date" id="period-end">
+      </div>
+    </div>
+  </div>
+
+  <!-- CSV Upload -->
+  <div class="card">
+    <div class="card-title">Noterro export</div>
+    <p style="font-size:13px;color:#5f5e5a;margin-bottom:1rem;">Export from <strong>Reports → Finance → Practitioner Sales</strong> for the pay period above.</p>
+    <div class="upload-zone" id="drop-zone">
+      <p>📄 Drop CSV here or click to browse</p>
+      <div class="filename" id="filename-display"></div>
+    </div>
+    <input type="file" id="file-input" accept=".csv">
+  </div>
+
+  <button class="run-btn" id="run-btn" disabled>Calculate payroll</button>
+  <div class="error-msg" id="error-msg" style="display:none"></div>
+  <div class="results" id="results"></div>
+  <button class="download-btn" id="download-btns" style="display:none" onclick="downloadExcel()">⬇ Download Excel for bookkeeper</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+let THERAPIST_RATES = {
+  "Mario Starnino":     { r15:21.00, r30:42.00, r45:53.50, r60:57.50, r90:86.25, massage:0,  admin:22.10, rz15:6, rz30:12, salary:1000 },
+  "Alexis Boosamra":    { r15:21.00, r30:42.00, r45:53.50, r60:57.50, r90:86.25, massage:0,  admin:22.10, rz15:6, rz30:12, salary:337  },
+  "Jordan Katsoulis":   { r15:17.85, r30:35.70, r45:45.38, r60:48.96, r90:73.44, massage:0,  admin:20.50, rz15:6, rz30:12, salary:0   },
+  "Gabrielle Khreiche": { r15:15.75, r30:31.50, r45:40.00, r60:43.00, r90:64.50, massage:46, admin:18.10, rz15:6, rz30:12, salary:0   },
+  "Grace Lewis":        { r15:14.00, r30:28.00, r45:36.00, r60:40.00, r90:60.00, massage:0,  admin:16.10, rz15:6, rz30:12, salary:0   },
+  "Justin Hernandez":   { r15:14.00, r30:28.00, r45:36.00, r60:40.00, r90:60.00, massage:0,  admin:16.10, rz15:6, rz30:12, salary:0   }
+};
+
+function buildRatesTable(){
+  const tbody=document.getElementById('rates-tbody');
+  tbody.innerHTML='';
+  const filterEl=document.getElementById('therapist-filter');
+  if(filterEl) filterEl.innerHTML='';
+  for(const [name,r] of Object.entries(THERAPIST_RATES)){
+    const row=makeRow(name,r); row.style.display='none'; tbody.appendChild(row);
+    if(filterEl){
+      const id='filter-'+name.replace(/\s+/g,'_');
+      const parts=name.split(' ');
+      const shortName=parts[0]+' '+(parts[1]?parts[1][0]+'.':'');
+      const label=document.createElement('label');
+      label.style.cssText='font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;padding:3px 8px;border:0.5px solid rgba(0,0,0,0.15);border-radius:5px;background:#f5f5f3';
+      label.innerHTML=`<input type="checkbox" id="${id}" onchange="filterTherapistRow('${name}',this.checked)"> ${shortName}`;
+      filterEl.appendChild(label);
+    }
+  }
 }
+function filterTherapistRow(name,show){
+  const rows=document.querySelectorAll('#rates-tbody tr');
+  for(const row of rows){
+    const nameInput=row.querySelector('input[type="text"]');
+    if(nameInput&&nameInput.value===name){
+      row.style.display=show?'':'none';
+    }
+  }
+}
+function toggleAllTherapists(show){
+  document.querySelectorAll('#therapist-filter input[type="checkbox"]').forEach(cb=>{
+    cb.checked=show;
+    const name=cb.id.replace('filter-','').replace(/_/g,' ');
+    filterTherapistRow(name,show);
+  });
+}
+function calcAvgWage(r){
+  const baseRates=[r.r15/15*60,r.r30/30*60,r.r45/45*60,r.r60/60*60,r.r90/90*60,
+    r.admin||0,(r.rz15||6)/15*60,(r.rz30||12)/30*60];
+  const sum=baseRates.reduce((a,b)=>a+b,0);
+  if(r.massage>0){
+    return (sum+(r.massage))/9;
+  }
+  return sum/8;
+}
+function makeRow(name,r){
+  const tr=document.createElement('tr');
+  tr.innerHTML=`
+    <td style="text-align:center;font-weight:500;font-size:13px;color:#0f6e56;padding:5px 8px;white-space:nowrap">$${calcAvgWage(r).toFixed(2)}/hr</td>
+    <td><input type="text" value="${name}" placeholder="Full name" style="min-width:140px"></td>
+    <td><input type="number" value="${r.r15}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.r30}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.r45}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.r60}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.r90}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.massage}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.admin}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.rz15||6}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.rz30||12}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.salary}" step="0.01" min="0"></td>
+    <td><button class="del-btn" onclick="this.closest('tr').remove()">×</button></td>`;
+  return tr;
+}
+function addTherapistRow(){
+  document.getElementById('rates-tbody').appendChild(makeRow('',{r15:0,r30:0,r45:0,r60:0,r90:0,massage:0,admin:0,rz15:6,rz30:12,salary:0}));
+}
+function saveRates(){
+  const newRates={};
+  for(const row of document.querySelectorAll('#rates-tbody tr')){
+    const inputs=row.querySelectorAll('input');
+    const name=inputs[0].value.trim();
+    if(!name) continue;
+    newRates[name]={r15:parseFloat(inputs[1].value)||0,r30:parseFloat(inputs[2].value)||0,r45:parseFloat(inputs[3].value)||0,r60:parseFloat(inputs[4].value)||0,r90:parseFloat(inputs[5].value)||0,massage:parseFloat(inputs[6].value)||0,admin:parseFloat(inputs[7].value)||0,rz15:parseFloat(inputs[8].value)||0,rz30:parseFloat(inputs[9].value)||0,salary:parseFloat(inputs[10].value)||0};
+  }
+  THERAPIST_RATES=newRates;
+  const blob=new Blob([JSON.stringify(newRates,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='payroll-rates.json'; a.click(); URL.revokeObjectURL(a.href);
+  const conf=document.getElementById('save-confirm'); conf.classList.add('show'); setTimeout(()=>conf.classList.remove('show'),2500);
+}
+function loadRatesFile(input){
+  const file=input.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{ try{ THERAPIST_RATES=JSON.parse(e.target.result); buildRatesTable(); }catch(err){ alert('Could not read rates file.'); } };
+  reader.readAsText(file);
+}
+function toggleSettings(){
+  const s=document.getElementById('settings-section'); s.classList.toggle('open');
+  document.querySelector('.settings-toggle').textContent=s.classList.contains('open')?'Close':'Edit rates';
+}
+buildRatesTable();
+
+// CSV parser
+function parseCSV(text){
+  const lines=text.trim().split('\n');
+  const headers=lines[0].split(',').map(h=>h.replace(/^"|"$/g,'').trim());
+  const rows=[];
+  for(let i=1;i<lines.length;i++){
+    const line=lines[i]; if(!line.trim()) continue;
+    const vals=[]; let inQ=false,cur='';
+    for(let c=0;c<line.length;c++){
+      if(line[c]==='"'){inQ=!inQ;}
+      else if(line[c]===','&&!inQ){vals.push(cur);cur='';}
+      else{cur+=line[c];}
+    }
+    vals.push(cur);
+    const row={};
+    headers.forEach((h,idx)=>{row[h]=(vals[idx]||'').trim();});
+    rows.push(row);
+  }
+  return rows;
+}
+
+function parseDuration(name){
+  const m=name.match(/[\-\s\(](\d+)(?:\-\d+)?\s*min/i)||name.match(/(\d+)\s*min/i);
+  return m?parseInt(m[1]):null;
+}
+function isMassage(name){ return /\(MT\)/i.test(name)||(/massage/i.test(name)&&!/\(AT\)/i.test(name)); }
+function isATMassage(name){ return /\(AT\)/i.test(name); }
+function isAdminHours(cat,name){ return /^admin$/i.test(cat)||/admin hours/i.test(name); }
+function isRLT(name){ return /RLT|red light/i.test(name); }
+function isRecoveryZone(cat){ return /recovery zone/i.test(cat); }
+function isProduct(cat,name){ return !cat||/theraband|epsom|electrolyte|protein|normatec|hyperice|squat wedge|athletic tape|origen|hyako|continuing education/i.test(name)||/neurotracker/i.test(name)&&!/consult/i.test(name); }
+function isCancellation(cat,name){ return /cancellation/i.test(name)||/cancellation/i.test(cat); }
+function isTreatment(cat,name){
+  if(!cat||/^admin$/i.test(cat)) return false;
+  if(isRecoveryZone(cat)) return false;
+  if(isCancellation(cat,name)||isProduct(cat,name)||/sick|personal day/i.test(name)) return false;
+  return true;
+}
+function getDurationRate(rates,mins){
+  if(mins<=15) return rates.r15;
+  if(mins<=30) return rates.r30;
+  if(mins<=45) return rates.r45;
+  if(mins<=75) return rates.r60;
+  return rates.r90;
+}
+
+function classifyAndEarn(cat,name,subtotal,rates,productCat,serviceTime){
+  if(productCat) return {commission:subtotal*0.10,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Product (10%)'};
+  if(isProduct(cat,name)) return {commission:subtotal*0.10,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Product (10%)'};
+  if(isCancellation(cat,name)) return {commission:0,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Cancellation',flag:true,totalWithTax:0};
+  if(isRecoveryZone(cat)){
+    if(isRLT(name)) return {commission:0,charting:0,admin:0,massage:0,rz:rates.rz15||6,isTreat:false,label:'RZ 15min'};
+    return {commission:0,charting:0,admin:0,massage:0,rz:rates.rz30||12,isTreat:false,label:'RZ 30min+'};
+  }
+  if(isAdminHours(cat,name)){
+    if(/sick|personal day/i.test(name)) return {commission:0,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Skip'};
+    if(/neurotracker.*consult/i.test(name)) return {commission:0,charting:0,admin:parseFloat((0.25*rates.admin).toFixed(2)),massage:0,rz:0,isTreat:false,label:'Admin 15min'};
+    const mins=serviceTime||parseDuration(name)||60;
+    const adminHrs=parseFloat((mins/60).toFixed(2));
+    return {commission:0,charting:0,admin:parseFloat((adminHrs*rates.admin).toFixed(2)),massage:0,rz:0,isTreat:false,label:`Admin ${mins}min`};
+  }
+  if(isMassage(name)){
+    let rawMins=parseDuration(name)||serviceTime||60;
+    // Auto-correct Noterro checkout inflation
+    if(rawMins===45) rawMins=30;
+    else if(rawMins===75) rawMins=60;
+    else if(rawMins===105) rawMins=90;
+    const massHrs=parseFloat((rawMins/60).toFixed(2));
+    return {commission:0,charting:0,admin:0,massage:parseFloat((massHrs*rates.massage).toFixed(2)),rz:0,isTreat:true,label:`Massage ${rawMins}min`,massageMins:rawMins};
+  }
+  if(isATMassage(name)){
+    const mins=serviceTime||parseDuration(name)||45;
+    return {commission:getDurationRate(rates,mins),charting:rates.admin*(10/60),admin:0,massage:0,rz:0,isTreat:true,label:`AT (${mins}min)`};
+  }
+  const mins=serviceTime||parseDuration(name);
+  if(mins){
+    return {commission:getDurationRate(rates,mins),charting:rates.admin*(10/60),admin:0,massage:0,rz:0,isTreat:true,label:`${mins}min`};
+  }
+  return {commission:0,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Unknown',flag:true};
+}
+
+function correctMassageMins(raw){
+  if(raw===45) return 30;
+  if(raw===75) return 60;
+  if(raw===105) return 90;
+  return raw;
+}
+
+function makeMassageHeader(){
+  const headers=['Invoice #','Invoice Date','Service Category','Line Item Name','Service Time','Duration','Service Date','Qty','Practitioner','Discount Name','Disc Amt','Subtotal','Tax','Total','Balance','Patient Name','Move to'];
+  return `<tr style="border-bottom:0.5px solid rgba(0,0,0,0.15)">${headers.map(h=>`<th style="font-size:11px;color:#5f5e5a;font-weight:500;padding:4px 8px 6px 0;white-space:nowrap">${h}</th>`).join('')}</tr>`;
+}
+
+function makeMassageRows(items, uid, therapist, rates){
+  const colStyle='style="color:#5f5e5a;font-size:11px;white-space:nowrap;padding:4px 8px 4px 0"';
+  return items.map(i=>{
+    const hasBalance=parseFloat(i.balance||0)>0;
+    const rowStyle=hasBalance?'style="background:#fff0f0"':'';
+    const corrected=i.massageMins||correctMassageMins(parseFloat(i.serviceTime)||60)||60;
+    return `<tr ${rowStyle}>
+      <td ${colStyle}>${i.invoice}</td>
+      <td ${colStyle}>${i.invoiceDate}</td>
+      <td ${colStyle}>${i.serviceCategory||''}</td>
+      <td style="color:#5f5e5a;font-size:11px;padding:4px 8px 4px 0;min-width:220px">${i.name}</td>
+      <td ${colStyle}>${i.serviceTime}</td>
+      <td style="padding:4px 4px 4px 0"><input type="number" min="5" step="5" value="${corrected}" style="width:55px;padding:3px 5px;border:0.5px solid rgba(0,0,0,0.25);border-radius:5px;font-size:11px;background:#fffde7" onchange="updateMassageDuration('${therapist}','${uid}','${i.invoice}',this.value,${rates.massage})"></td>
+      <td ${colStyle}>${i.date}</td>
+      <td ${colStyle}>${i.quantity}</td>
+      <td ${colStyle}>${i.practitioner}</td>
+      <td ${colStyle}>${i.discountName}</td>
+      <td ${colStyle}>${i.discountAmount}</td>
+      <td ${colStyle}>${i.subtotal}</td>
+      <td ${colStyle}>${i.taxAmount}</td>
+      <td ${colStyle}>${i.total}</td>
+      <td ${colStyle}>${i.balance}</td>
+      <td ${colStyle}>${i.patient}</td>
+      <td style="padding:4px 8px 4px 0"><select style="font-size:11px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.2);border-radius:4px;background:#fff" onchange="moveRow('${therapist}','${uid}',this,'massage','${i.invoice}')"><option value="">Move to...</option><option value="admin">Admin / Recovery Zone</option><option value="r15">15-30min Sessions</option><option value="r45">45min Sessions</option><option value="r60">60min Sessions</option><option value="r90">90min Sessions</option></select></td>
+    </tr>`;
+  }).join('');
+}
+
+function updateMassageDuration(therapist, uid, invoiceNum, newMins, massageRate){
+  const data=lastTherapistData[therapist];
+  if(!data) return;
+  const item=data.massage.find(i=>i.invoice===invoiceNum);
+  if(!item) return;
+  const mins=parseFloat(newMins)||60;
+  const newAmt=parseFloat((parseFloat((mins/60).toFixed(2))*massageRate).toFixed(2));
+  item.amount=newAmt;
+  item.massageMins=mins;
+  // Recalc totals
+  const totalMassage=data.massage.reduce((s,i)=>s+i.amount,0);
+  lastResults[therapist].massage=totalMassage;
+  recalcTotals(uid,therapist);
+}
+
+function renderMassageSection(data,rates,uid,therapist,sumItems){
+  if(!data.massage||data.massage.length===0) return '';
+  const totalMin=data.massage.reduce((s,i)=>s+(i.massageMins||parseFloat(i.serviceTime)||0),0);
+  const totalQty=data.massage.reduce((s,i)=>s+(parseFloat(i.quantity)||0),0);
+  const totalPay=sumItems(data.massage).toFixed(2);
+  return '<tr class="section-header"><td colspan="17" style="text-align:left">Massage Therapy ('+data.massage.length+' · $'+sumItems(data.massage).toFixed(2)+')</td></tr>'
+    +makeMassageHeader()
+    +makeMassageRows(data.massage,uid,therapist,rates)
+    +'<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Total: '+totalMin+' min · Qty: '+totalQty+'</td><td colspan="5" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">'+rates.massage.toFixed(2)+'/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$'+totalPay+'</td></tr>';
+}
+
+let csvData=null;
+let lastResults=null;
+let lastTherapistData={};
+let itemStore={};
+let periodStart='', periodEnd='';
+
+document.getElementById('period-start').addEventListener('change', checkReady);
+document.getElementById('period-end').addEventListener('change', checkReady);
+
+const dropZone=document.getElementById('drop-zone');
+const fileInput=document.getElementById('file-input');
+dropZone.addEventListener('click',()=>fileInput.click());
+dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('dragover');});
+dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.classList.remove('dragover');if(e.dataTransfer.files[0])loadFile(e.dataTransfer.files[0]);});
+fileInput.addEventListener('change',()=>{if(fileInput.files[0])loadFile(fileInput.files[0]);});
+function loadFile(file){
+  const reader=new FileReader();
+  reader.onload=e=>{csvData=parseCSV(e.target.result);document.getElementById('filename-display').textContent=file.name+` (${csvData.length-1} rows)`;checkReady();};
+  reader.readAsText(file);
+}
+function checkReady(){
+  const hasStart=!!document.getElementById('period-start').value;
+  const hasEnd=!!document.getElementById('period-end').value;
+  document.getElementById('run-btn').disabled=!(hasStart&&hasEnd&&csvData);
+}
+
+document.getElementById('run-btn').addEventListener('click', calculate);
 
 function toggleCard(uid){
   const body=document.getElementById('body-'+uid);
@@ -867,11 +1233,37 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
       html+=`<tr><td colspan="7" style="font-size:11px;color:#185fa5;padding:3px 0 3px 8px">Commission: 10% of subtotal</td></tr>`;
       if(prodItems.length>0){ html+=makeHeaderInner(); html+=makeRowsInner(prodItems,'product'); }
       else{ html+=`<tr><td colspan="14" style="color:#5f5e5a;font-size:11px;padding:4px 0 4px 8px">No products this period</td></tr>`; }
+      html+=`<tr style="border-top:1px solid rgba(0,0,0,0.15);background:#fff8e1"><td colspan="10" style="font-size:12px;font-weight:600;padding:6px 0 6px 8px;color:#854f0b">Total Commission (RZ + Products)</td><td colspan="4" style="font-size:12px;font-weight:600;text-align:right;padding:6px 0;color:#854f0b">$${(sumItems(data.rz)+sumItems(prodItems)).toFixed(2)}</td></tr>`;
       if(salary>0){
         html+=sectionHeader('Salary');
         html+=`<tr><td style="padding-left:8px">Per period</td><td>$${salary.toFixed(2)}</td></tr>`;
       }
       // Manual entries - restore saved values
+      // Summary block
+      const allAdminItemsS=[...data.admin,...data.rz];
+      const adminCleanHrsS=parseFloat((allAdminItemsS.reduce((s,i)=>s+(parseFloat(i.serviceTime)||parseDuration(i.name)||60)/60,0)+(cleaningDays*15/60)).toFixed(2));
+      const adminCleanPayS=(sumItems(data.admin)+cleaning).toFixed(2);
+      const chartHrsS=(Object.values(data.sessions).flat().length*10/60).toFixed(2);
+      const r15HrsS=(data.sessions.r15.length*30/60).toFixed(2);
+      const r45HrsS=(data.sessions.r45.length*45/60).toFixed(2);
+      const r60HrsS=(data.sessions.r60.length).toFixed(2);
+      const r90HrsS=(data.sessions.r90.length*90/60).toFixed(2);
+      const massHrsS=data.massage.reduce((s,i)=>s+(i.massageMins||parseFloat(i.serviceTime)||60)/60,0).toFixed(2);
+      const commissionS=(sumItems(data.rz)+sumItems(data.products||[])).toFixed(2);
+      const sRow=(label,rate,hrs,pay)=>`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)"><td colspan="7" style="font-size:12px;padding:4px 0 4px 8px">${label}</td><td colspan="3" style="font-size:12px;text-align:right;color:#185fa5">${rate?'$'+rate+'/hr':''}</td><td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a">${hrs?hrs+' hrs':''}</td><td colspan="3" style="font-size:12px;text-align:right;font-weight:500">$${pay}</td></tr>`;
+      html+=`<tr style="background:#1a1a18"><td colspan="15" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#fff">${therapist} — Summary</td></tr>`;
+      html+=sRow('Admin & Cleaning',rates.admin.toFixed(2),adminCleanHrsS,adminCleanPayS);
+      html+=sRow('Charting',rates.admin.toFixed(2),chartHrsS,totalCharting.toFixed(2));
+      html+=sRow('15-30min Therapy',(rates.r30/30*60).toFixed(2),r15HrsS,sumItems(data.sessions.r15).toFixed(2));
+      html+=sRow('45min Therapy',(rates.r45/45*60).toFixed(2),r45HrsS,sumItems(data.sessions.r45).toFixed(2));
+      html+=sRow('60min Therapy',(rates.r60).toFixed(2),r60HrsS,sumItems(data.sessions.r60).toFixed(2));
+      html+=sRow('90min Therapy',(rates.r90/90*60).toFixed(2),r90HrsS,sumItems(data.sessions.r90).toFixed(2));
+      if(rates.massage>0) html+=sRow('Massage Therapy',rates.massage.toFixed(2),massHrsS,sumItems(data.massage).toFixed(2));
+      html+=sRow('Commission (RZ + Products)',null,null,commissionS);
+      if(salary>0) html+=sRow('Salary',calcAvgWage(rates).toFixed(2),(salary/calcAvgWage(rates)).toFixed(2),salary.toFixed(2));
+      const subtotalS=(sumItems(data.sessions.r15)+sumItems(data.sessions.r45)+sumItems(data.sessions.r60)+sumItems(data.sessions.r90)+sumItems(data.massage)+sumItems(data.admin)+sumItems(data.rz)+sumItems(data.products||[])+cleaning+totalCharting+salary).toFixed(2);
+      const totalHrsS=(adminCleanHrsS+parseFloat(chartHrsS)+parseFloat(r15HrsS)+parseFloat(r45HrsS)+parseFloat(r60HrsS)+parseFloat(r90HrsS)+parseFloat(massHrsS)).toFixed(2);
+      html+=`<tr style="border-top:1px solid rgba(0,0,0,0.15);background:#e8f5e9"><td colspan="8" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#0f6e56">Subtotal earned</td><td colspan="4" style="font-size:12px;color:#0f6e56;text-align:right">${totalHrsS} hrs total</td><td colspan="3" style="font-size:13px;font-weight:600;text-align:right;padding:8px 0;color:#0f6e56" id="subtotal-earned-${uid}">$0.00</td></tr>`;
       html+=`<tr class="section-header"><td colspan="15">Manual entries</td></tr>
         <tr><td>Sick / Personal Pay</td><td><input type="number" class="manual-input" min="0" step="0.01" value="${savedSick}" id="sick-${uid}" oninput="recalcTotals('${uid}','${therapist}')"></td></tr>
         <tr><td>Holiday Pay</td><td><input type="number" class="manual-input" min="0" step="0.01" value="${savedHoliday}" id="holiday-${uid}" oninput="recalcTotals('${uid}','${therapist}')"></td></tr>
@@ -1064,6 +1456,432 @@ function downloadExcel(){
   XLSX.utils.book_append_sheet(wb,ws,sheetName);
   XLSX.writeFile(wb,`Payroll_${periodStart}_to_${periodEnd}.xlsx`);
 }
+</script>
+</body>
+</html`:''}E html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payroll Calculator</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f3; color: #1a1a18; min-height: 100vh; padding: 2rem 1rem; }
+  .container { max-width: 1400px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 500; margin-bottom: 0.25rem; }
+  .subtitle { font-size: 14px; color: #5f5e5a; margin-bottom: 2rem; }
+  .card { background: #fff; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; }
+  .card-title { font-size: 13px; font-weight: 500; color: #5f5e5a; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 1rem; }
+  .card-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+  @media(max-width:600px){ .form-row { grid-template-columns: 1fr; } }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  label { font-size: 13px; color: #5f5e5a; }
+  input[type="date"], select { padding: 8px 10px; border: 0.5px solid rgba(0,0,0,0.2); border-radius: 8px; font-size: 14px; background: #fff; color: #1a1a18; width: 100%; }
+  input[type="date"]:focus, select:focus { outline: none; border-color: rgba(0,0,0,0.4); }
+  .upload-zone { border: 1.5px dashed rgba(0,0,0,0.2); border-radius: 10px; padding: 2rem; text-align: center; cursor: pointer; transition: border-color 0.15s; background: #fafafa; }
+  .upload-zone:hover, .upload-zone.dragover { border-color: rgba(0,0,0,0.4); background: #f0f0ee; }
+  .upload-zone p { font-size: 14px; color: #5f5e5a; }
+  .upload-zone .filename { font-size: 13px; color: #3b6d11; font-weight: 500; margin-top: 0.5rem; }
+  input[type="file"] { display: none; }
+  button.run-btn { width: 100%; padding: 11px; background: #1a1a18; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 500; cursor: pointer; margin-top: 0.5rem; transition: opacity 0.15s; }
+  button.run-btn:hover { opacity: 0.85; }
+  button.run-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .settings-toggle { font-size: 13px; color: #5f5e5a; cursor: pointer; background: none; border: 0.5px solid rgba(0,0,0,0.15); border-radius: 6px; padding: 5px 12px; }
+  .settings-toggle:hover { background: #f5f5f3; }
+  .settings-section { display: none; margin-top: 1rem; }
+  .settings-section.open { display: block; }
+  .rates-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .rates-table th { text-align: left; color: #5f5e5a; font-weight: 500; padding: 6px 8px 10px; border-bottom: 0.5px solid rgba(0,0,0,0.12); font-size: 12px; white-space: nowrap; }
+  .rates-table td { padding: 5px 4px; border-bottom: 0.5px solid rgba(0,0,0,0.05); vertical-align: middle; }
+  .rates-table tr:last-child td { border-bottom: none; }
+  .rates-table input[type="text"], .rates-table input[type="number"] { width: 100%; padding: 5px 7px; border: 0.5px solid rgba(0,0,0,0.15); border-radius: 6px; font-size: 13px; background: #fff; color: #1a1a18; min-width: 60px; }
+  .rates-table input[type="text"] { min-width: 130px; }
+  .rates-table input:focus { outline: none; border-color: rgba(0,0,0,0.35); }
+  .save-btn { margin-top: 1rem; padding: 7px 16px; background: #1a1a18; color: #fff; border: none; border-radius: 7px; font-size: 13px; cursor: pointer; }
+  .add-row-btn { margin-top: 0.75rem; padding: 6px 14px; background: none; border: 0.5px solid rgba(0,0,0,0.2); border-radius: 7px; font-size: 13px; cursor: pointer; color: #1a1a18; }
+  .del-btn { background: none; border: none; cursor: pointer; color: #a32d2d; font-size: 16px; padding: 2px 6px; }
+  .save-confirm { font-size: 12px; color: #3b6d11; margin-left: 10px; opacity: 0; transition: opacity 0.3s; }
+  .save-confirm.show { opacity: 1; }
+  .settings-note { font-size: 12px; color: #5f5e5a; margin-top: 0.75rem; line-height: 1.5; }
+  .results { margin-top: 1.5rem; }
+  .result-card { background: #fff; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 12px; margin-bottom: 1rem; overflow: hidden; }
+  .result-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.25rem; border-bottom: 0.5px solid rgba(0,0,0,0.08); background: #1a1a18; }
+  .therapist-name { font-size: 16px; font-weight: 500; color: #fff; }
+  .gross-amount { font-size: 20px; font-weight: 500; color: #a8d5a2; }
+  .gross-label { font-size: 11px; color: rgba(255,255,255,0.6); text-align: right; }
+  .result-body { padding: 1rem 1.25rem; }
+  .breakdown-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .breakdown-table th { text-align: left; color: #5f5e5a; font-weight: 500; padding: 4px 8px 8px 0; border-bottom: 0.5px solid rgba(0,0,0,0.1); }
+  .breakdown-table th:last-child { text-align: right; }
+  .breakdown-table td { padding: 5px 8px 5px 0; border-bottom: 0.5px solid rgba(0,0,0,0.05); color: #1a1a18; vertical-align: top; }
+  .breakdown-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  .breakdown-table tr:last-child td { border-bottom: none; }
+  .section-header td { font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #5f5e5a; padding-top: 12px; border-bottom: 0.5px solid rgba(0,0,0,0.1) !important; text-align: left; }
+  .total-row td { font-weight: 600; padding-top: 10px; border-top: 0.5px solid rgba(0,0,0,0.15) !important; border-bottom: none !important; color: #0f6e56; font-size: 14px; }
+  .rrsp-row td { color: #185fa5; }
+  .bonus-row td { color: #854f0b; }
+  .manual-input { width: 100px; padding: 4px 8px; border: 0.5px solid rgba(0,0,0,0.2); border-radius: 6px; font-size: 13px; text-align: right; background: #fffde7; }
+  .manual-input:focus { outline: none; border-color: rgba(0,0,0,0.4); }
+  .grand-total-row td { font-weight: 700; font-size: 15px; color: #1a1a18; padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.2) !important; border-bottom: none !important; }
+  .download-btn { width: 100%; padding: 11px; background: #0f6e56; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 500; cursor: pointer; margin-top: 1rem; transition: opacity 0.15s; }
+  .download-btn:hover { opacity: 0.85; }
+  .download-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .error-msg { background: #fcebeb; color: #a32d2d; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-top: 0.75rem; }
+  .canc-select { padding:4px 7px;border:0.5px solid rgba(186,119,23,0.5);border-radius:6px;font-size:12px;background:#faeeda;color:#633806;width:200px; }
+  .notes-area { width:100%;padding:8px 10px;border:0.5px solid rgba(0,0,0,0.15);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;min-height:60px;margin-top:0.75rem;background:#fafafa;color:#1a1a18; }
+  .notes-area:focus { outline:none;border-color:rgba(0,0,0,0.35); }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Payroll calculator</h1>
+  <p class="subtitle">Activ Axion · Commission-based payroll</p>
+
+  <!-- Rates -->
+  <div class="card">
+    <div class="card-title-row">
+      <div class="card-title" style="margin-bottom:0">Therapist rates</div>
+      <button class="settings-toggle" onclick="toggleSettings()">Edit rates</button>
+    </div>
+    <div class="settings-section" id="settings-section">
+      <p style="font-size:13px;color:#5f5e5a;margin-bottom:0.75rem;">Edit rates directly. Salary is per pay period. Click Save & export, then load the file next session.</p>
+      <div style="margin-bottom:1rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="font-size:13px;color:#5f5e5a">Show therapists:</label>
+        <div id="therapist-filter" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        <button onclick="toggleAllTherapists(true)" style="font-size:12px;padding:3px 10px;border:0.5px solid rgba(0,0,0,0.2);border-radius:5px;background:none;cursor:pointer">All</button>
+        <button onclick="toggleAllTherapists(false)" style="font-size:12px;padding:3px 10px;border:0.5px solid rgba(0,0,0,0.2);border-radius:5px;background:none;cursor:pointer">None</button>
+      </div>
+      <div style="overflow-x:auto">
+      <table class="rates-table">
+        <thead>
+          <tr>
+            <th>Avg Wage/hr</th><th>Name</th><th>15min</th><th>30min</th><th>45min</th><th>60min</th><th>90min</th>
+            <th>Massage/hr</th><th>Admin/hr</th><th>RZ 15min</th><th>RZ 30min+</th><th>Salary/period</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="rates-tbody"></tbody>
+      </table>
+      </div>
+      <button class="add-row-btn" onclick="addTherapistRow()">+ Add therapist</button>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:1rem;flex-wrap:wrap">
+        <button class="save-btn" onclick="saveRates()">Save &amp; export rates</button>
+        <label style="padding:7px 14px;background:none;border:0.5px solid rgba(0,0,0,0.2);border-radius:7px;font-size:13px;cursor:pointer;color:#1a1a18">
+          Load saved rates<input type="file" accept=".json" style="display:none" onchange="loadRatesFile(this)">
+        </label>
+        <span class="save-confirm" id="save-confirm">Saved — check your downloads</span>
+      </div>
+      <p class="settings-note">⚠ To keep changes: Save &amp; export, store rates.json in Google Drive, load it each session.</p>
+    </div>
+  </div>
+
+  <!-- Pay period -->
+  <div class="card">
+    <div class="card-title">Pay period</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Start date</label>
+        <input type="date" id="period-start">
+      </div>
+      <div class="form-group">
+        <label>End date</label>
+        <input type="date" id="period-end">
+      </div>
+    </div>
+  </div>
+
+  <!-- CSV Upload -->
+  <div class="card">
+    <div class="card-title">Noterro export</div>
+    <p style="font-size:13px;color:#5f5e5a;margin-bottom:1rem;">Export from <strong>Reports → Finance → Practitioner Sales</strong> for the pay period above.</p>
+    <div class="upload-zone" id="drop-zone">
+      <p>📄 Drop CSV here or click to browse</p>
+      <div class="filename" id="filename-display"></div>
+    </div>
+    <input type="file" id="file-input" accept=".csv">
+  </div>
+
+  <button class="run-btn" id="run-btn" disabled>Calculate payroll</button>
+  <div class="error-msg" id="error-msg" style="display:none"></div>
+  <div class="results" id="results"></div>
+  <button class="download-btn" id="download-btns" style="display:none" onclick="downloadExcel()">⬇ Download Excel for bookkeeper</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+let THERAPIST_RATES = {
+  "Mario Starnino":     { r15:21.00, r30:42.00, r45:53.50, r60:57.50, r90:86.25, massage:0,  admin:22.10, rz15:6, rz30:12, salary:1000 },
+  "Alexis Boosamra":    { r15:21.00, r30:42.00, r45:53.50, r60:57.50, r90:86.25, massage:0,  admin:22.10, rz15:6, rz30:12, salary:337  },
+  "Jordan Katsoulis":   { r15:17.85, r30:35.70, r45:45.38, r60:48.96, r90:73.44, massage:0,  admin:20.50, rz15:6, rz30:12, salary:0   },
+  "Gabrielle Khreiche": { r15:15.75, r30:31.50, r45:40.00, r60:43.00, r90:64.50, massage:46, admin:18.10, rz15:6, rz30:12, salary:0   },
+  "Grace Lewis":        { r15:14.00, r30:28.00, r45:36.00, r60:40.00, r90:60.00, massage:0,  admin:16.10, rz15:6, rz30:12, salary:0   },
+  "Justin Hernandez":   { r15:14.00, r30:28.00, r45:36.00, r60:40.00, r90:60.00, massage:0,  admin:16.10, rz15:6, rz30:12, salary:0   }
+};
+
+function buildRatesTable(){
+  const tbody=document.getElementById('rates-tbody');
+  tbody.innerHTML='';
+  const filterEl=document.getElementById('therapist-filter');
+  if(filterEl) filterEl.innerHTML='';
+  for(const [name,r] of Object.entries(THERAPIST_RATES)){
+    const row=makeRow(name,r); row.style.display='none'; tbody.appendChild(row);
+    if(filterEl){
+      const id='filter-'+name.replace(/\s+/g,'_');
+      const parts=name.split(' ');
+      const shortName=parts[0]+' '+(parts[1]?parts[1][0]+'.':'');
+      const label=document.createElement('label');
+      label.style.cssText='font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;padding:3px 8px;border:0.5px solid rgba(0,0,0,0.15);border-radius:5px;background:#f5f5f3';
+      label.innerHTML=`<input type="checkbox" id="${id}" onchange="filterTherapistRow('${name}',this.checked)"> ${shortName}`;
+      filterEl.appendChild(label);
+    }
+  }
+}
+function filterTherapistRow(name,show){
+  const rows=document.querySelectorAll('#rates-tbody tr');
+  for(const row of rows){
+    const nameInput=row.querySelector('input[type="text"]');
+    if(nameInput&&nameInput.value===name){
+      row.style.display=show?'':'none';
+    }
+  }
+}
+function toggleAllTherapists(show){
+  document.querySelectorAll('#therapist-filter input[type="checkbox"]').forEach(cb=>{
+    cb.checked=show;
+    const name=cb.id.replace('filter-','').replace(/_/g,' ');
+    filterTherapistRow(name,show);
+  });
+}
+function calcAvgWage(r){
+  const baseRates=[r.r15/15*60,r.r30/30*60,r.r45/45*60,r.r60/60*60,r.r90/90*60,
+    r.admin||0,(r.rz15||6)/15*60,(r.rz30||12)/30*60];
+  const sum=baseRates.reduce((a,b)=>a+b,0);
+  if(r.massage>0){
+    return (sum+(r.massage))/9;
+  }
+  return sum/8;
+}
+function makeRow(name,r){
+  const tr=document.createElement('tr');
+  tr.innerHTML=`
+    <td style="text-align:center;font-weight:500;font-size:13px;color:#0f6e56;padding:5px 8px;white-space:nowrap">$${calcAvgWage(r).toFixed(2)}/hr</td>
+    <td><input type="text" value="${name}" placeholder="Full name" style="min-width:140px"></td>
+    <td><input type="number" value="${r.r15}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.r30}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.r45}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.r60}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.r90}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.massage}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.admin}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.rz15||6}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.rz30||12}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.salary}" step="0.01" min="0"></td>
+    <td><button class="del-btn" onclick="this.closest('tr').remove()">×</button></td>`;
+  return tr;
+}
+function addTherapistRow(){
+  document.getElementById('rates-tbody').appendChild(makeRow('',{r15:0,r30:0,r45:0,r60:0,r90:0,massage:0,admin:0,rz15:6,rz30:12,salary:0}));
+}
+function saveRates(){
+  const newRates={};
+  for(const row of document.querySelectorAll('#rates-tbody tr')){
+    const inputs=row.querySelectorAll('input');
+    const name=inputs[0].value.trim();
+    if(!name) continue;
+    newRates[name]={r15:parseFloat(inputs[1].value)||0,r30:parseFloat(inputs[2].value)||0,r45:parseFloat(inputs[3].value)||0,r60:parseFloat(inputs[4].value)||0,r90:parseFloat(inputs[5].value)||0,massage:parseFloat(inputs[6].value)||0,admin:parseFloat(inputs[7].value)||0,rz15:parseFloat(inputs[8].value)||0,rz30:parseFloat(inputs[9].value)||0,salary:parseFloat(inputs[10].value)||0};
+  }
+  THERAPIST_RATES=newRates;
+  const blob=new Blob([JSON.stringify(newRates,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='payroll-rates.json'; a.click(); URL.revokeObjectURL(a.href);
+  const conf=document.getElementById('save-confirm'); conf.classList.add('show'); setTimeout(()=>conf.classList.remove('show'),2500);
+}
+function loadRatesFile(input){
+  const file=input.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{ try{ THERAPIST_RATES=JSON.parse(e.target.result); buildRatesTable(); }catch(err){ alert('Could not read rates file.'); } };
+  reader.readAsText(file);
+}
+function toggleSettings(){
+  const s=document.getElementById('settings-section'); s.classList.toggle('open');
+  document.querySelector('.settings-toggle').textContent=s.classList.contains('open')?'Close':'Edit rates';
+}
+buildRatesTable();
+
+// CSV parser
+function parseCSV(text){
+  const lines=text.trim().split('\n');
+  const headers=lines[0].split(',').map(h=>h.replace(/^"|"$/g,'').trim());
+  const rows=[];
+  for(let i=1;i<lines.length;i++){
+    const line=lines[i]; if(!line.trim()) continue;
+    const vals=[]; let inQ=false,cur='';
+    for(let c=0;c<line.length;c++){
+      if(line[c]==='"'){inQ=!inQ;}
+      else if(line[c]===','&&!inQ){vals.push(cur);cur='';}
+      else{cur+=line[c];}
+    }
+    vals.push(cur);
+    const row={};
+    headers.forEach((h,idx)=>{row[h]=(vals[idx]||'').trim();});
+    rows.push(row);
+  }
+  return rows;
+}
+
+function parseDuration(name){
+  const m=name.match(/[\-\s\(](\d+)(?:\-\d+)?\s*min/i)||name.match(/(\d+)\s*min/i);
+  return m?parseInt(m[1]):null;
+}
+function isMassage(name){ return /\(MT\)/i.test(name)||(/massage/i.test(name)&&!/\(AT\)/i.test(name)); }
+function isATMassage(name){ return /\(AT\)/i.test(name); }
+function isAdminHours(cat,name){ return /^admin$/i.test(cat)||/admin hours/i.test(name); }
+function isRLT(name){ return /RLT|red light/i.test(name); }
+function isRecoveryZone(cat){ return /recovery zone/i.test(cat); }
+function isProduct(cat,name){ return !cat||/theraband|epsom|electrolyte|protein|normatec|hyperice|squat wedge|athletic tape|origen|hyako|continuing education/i.test(name)||/neurotracker/i.test(name)&&!/consult/i.test(name); }
+function isCancellation(cat,name){ return /cancellation/i.test(name)||/cancellation/i.test(cat); }
+function isTreatment(cat,name){
+  if(!cat||/^admin$/i.test(cat)) return false;
+  if(isRecoveryZone(cat)) return false;
+  if(isCancellation(cat,name)||isProduct(cat,name)||/sick|personal day/i.test(name)) return false;
+  return true;
+}
+function getDurationRate(rates,mins){
+  if(mins<=15) return rates.r15;
+  if(mins<=30) return rates.r30;
+  if(mins<=45) return rates.r45;
+  if(mins<=75) return rates.r60;
+  return rates.r90;
+}
+
+function classifyAndEarn(cat,name,subtotal,rates,productCat,serviceTime){
+  if(productCat) return {commission:subtotal*0.10,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Product (10%)'};
+  if(isProduct(cat,name)) return {commission:subtotal*0.10,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Product (10%)'};
+  if(isCancellation(cat,name)) return {commission:0,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Cancellation',flag:true,totalWithTax:0};
+  if(isRecoveryZone(cat)){
+    if(isRLT(name)) return {commission:0,charting:0,admin:0,massage:0,rz:rates.rz15||6,isTreat:false,label:'RZ 15min'};
+    return {commission:0,charting:0,admin:0,massage:0,rz:rates.rz30||12,isTreat:false,label:'RZ 30min+'};
+  }
+  if(isAdminHours(cat,name)){
+    if(/sick|personal day/i.test(name)) return {commission:0,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Skip'};
+    if(/neurotracker.*consult/i.test(name)) return {commission:0,charting:0,admin:parseFloat((0.25*rates.admin).toFixed(2)),massage:0,rz:0,isTreat:false,label:'Admin 15min'};
+    const mins=serviceTime||parseDuration(name)||60;
+    const adminHrs=parseFloat((mins/60).toFixed(2));
+    return {commission:0,charting:0,admin:parseFloat((adminHrs*rates.admin).toFixed(2)),massage:0,rz:0,isTreat:false,label:`Admin ${mins}min`};
+  }
+  if(isMassage(name)){
+    let rawMins=parseDuration(name)||serviceTime||60;
+    // Auto-correct Noterro checkout inflation
+    if(rawMins===45) rawMins=30;
+    else if(rawMins===75) rawMins=60;
+    else if(rawMins===105) rawMins=90;
+    const massHrs=parseFloat((rawMins/60).toFixed(2));
+    return {commission:0,charting:0,admin:0,massage:parseFloat((massHrs*rates.massage).toFixed(2)),rz:0,isTreat:true,label:`Massage ${rawMins}min`,massageMins:rawMins};
+  }
+  if(isATMassage(name)){
+    const mins=serviceTime||parseDuration(name)||45;
+    return {commission:getDurationRate(rates,mins),charting:rates.admin*(10/60),admin:0,massage:0,rz:0,isTreat:true,label:`AT (${mins}min)`};
+  }
+  const mins=serviceTime||parseDuration(name);
+  if(mins){
+    return {commission:getDurationRate(rates,mins),charting:rates.admin*(10/60),admin:0,massage:0,rz:0,isTreat:true,label:`${mins}min`};
+  }
+  return {commission:0,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Unknown',flag:true};
+}
+
+function correctMassageMins(raw){
+  if(raw===45) return 30;
+  if(raw===75) return 60;
+  if(raw===105) return 90;
+  return raw;
+}
+
+function makeMassageHeader(){
+  const headers=['Invoice #','Invoice Date','Service Category','Line Item Name','Service Time','Duration','Service Date','Qty','Practitioner','Discount Name','Disc Amt','Subtotal','Tax','Total','Balance','Patient Name','Move to'];
+  return `<tr style="border-bottom:0.5px solid rgba(0,0,0,0.15)">${headers.map(h=>`<th style="font-size:11px;color:#5f5e5a;font-weight:500;padding:4px 8px 6px 0;white-space:nowrap">${h}</th>`).join('')}</tr>`;
+}
+
+function makeMassageRows(items, uid, therapist, rates){
+  const colStyle='style="color:#5f5e5a;font-size:11px;white-space:nowrap;padding:4px 8px 4px 0"';
+  return items.map(i=>{
+    const hasBalance=parseFloat(i.balance||0)>0;
+    const rowStyle=hasBalance?'style="background:#fff0f0"':'';
+    const corrected=i.massageMins||correctMassageMins(parseFloat(i.serviceTime)||60)||60;
+    return `<tr ${rowStyle}>
+      <td ${colStyle}>${i.invoice}</td>
+      <td ${colStyle}>${i.invoiceDate}</td>
+      <td ${colStyle}>${i.serviceCategory||''}</td>
+      <td style="color:#5f5e5a;font-size:11px;padding:4px 8px 4px 0;min-width:220px">${i.name}</td>
+      <td ${colStyle}>${i.serviceTime}</td>
+      <td style="padding:4px 4px 4px 0"><input type="number" min="5" step="5" value="${corrected}" style="width:55px;padding:3px 5px;border:0.5px solid rgba(0,0,0,0.25);border-radius:5px;font-size:11px;background:#fffde7" onchange="updateMassageDuration('${therapist}','${uid}','${i.invoice}',this.value,${rates.massage})"></td>
+      <td ${colStyle}>${i.date}</td>
+      <td ${colStyle}>${i.quantity}</td>
+      <td ${colStyle}>${i.practitioner}</td>
+      <td ${colStyle}>${i.discountName}</td>
+      <td ${colStyle}>${i.discountAmount}</td>
+      <td ${colStyle}>${i.subtotal}</td>
+      <td ${colStyle}>${i.taxAmount}</td>
+      <td ${colStyle}>${i.total}</td>
+      <td ${colStyle}>${i.balance}</td>
+      <td ${colStyle}>${i.patient}</td>
+      <td style="padding:4px 8px 4px 0"><select style="font-size:11px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.2);border-radius:4px;background:#fff" onchange="moveRow('${therapist}','${uid}',this,'massage','${i.invoice}')"><option value="">Move to...</option><option value="admin">Admin / Recovery Zone</option><option value="r15">15-30min Sessions</option><option value="r45">45min Sessions</option><option value="r60">60min Sessions</option><option value="r90">90min Sessions</option></select></td>
+    </tr>`;
+  }).join('');
+}
+
+function updateMassageDuration(therapist, uid, invoiceNum, newMins, massageRate){
+  const data=lastTherapistData[therapist];
+  if(!data) return;
+  const item=data.massage.find(i=>i.invoice===invoiceNum);
+  if(!item) return;
+  const mins=parseFloat(newMins)||60;
+  const newAmt=parseFloat((parseFloat((mins/60).toFixed(2))*massageRate).toFixed(2));
+  item.amount=newAmt;
+  item.massageMins=mins;
+  // Recalc totals
+  const totalMassage=data.massage.reduce((s,i)=>s+i.amount,0);
+  lastResults[therapist].massage=totalMassage;
+  recalcTotals(uid,therapist);
+}
+
+function renderMassageSection(data,rates,uid,therapist,sumItems){
+  if(!data.massage||data.massage.length===0) return '';
+  const totalMin=data.massage.reduce((s,i)=>s+(i.massageMins||parseFloat(i.serviceTime)||0),0);
+  const totalQty=data.massage.reduce((s,i)=>s+(parseFloat(i.quantity)||0),0);
+  const totalPay=sumItems(data.massage).toFixed(2);
+  return '<tr class="section-header"><td colspan="17" style="text-align:left">Massage Therapy ('+data.massage.length+' · $'+sumItems(data.massage).toFixed(2)+')</td></tr>'
+    +makeMassageHeader()
+    +makeMassageRows(data.massage,uid,therapist,rates)
+    +'<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Total: '+totalMin+' min · Qty: '+totalQty+'</td><td colspan="5" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">'+rates.massage.toFixed(2)+'/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$'+totalPay+'</td></tr>';
+}
+
+let csvData=null;
+let lastResults=null;
+let lastTherapistData={};
+let itemStore={};
+let periodStart='', periodEnd='';
+
+document.getElementById('period-start').addEventListener('change', checkReady);
+document.getElementById('period-end').addEventListener('change', checkReady);
+
+const dropZone=document.getElementById('drop-zone');
+const fileInput=document.getElementById('file-input');
+dropZone.addEventListener('click',()=>fileInput.click());
+dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('dragover');});
+dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.classList.remove('dragover');if(e.dataTransfer.files[0])loadFile(e.dataTransfer.files[0]);});
+fileInput.addEventListener('change',()=>{if(fileInput.files[0])loadFile(fileInput.files[0]);});
+function loadFile(file){
+  const reader=new FileReader();
+  reader.onload=e=>{csvData=parseCSV(e.target.result);document.getElementById('filename-display').textContent=file.name+` (${csvData.length-1} rows)`;checkReady();};
+  reader.readAsText(file);
+}
+function checkReady(){
+  const hasStart=!!document.getElementById('period-start').value;
+  const hasEnd=!!document.getElementById('period-end').value;
+  document.getElementById('run-btn').disabled=!(hasStart&&hasEnd&&csvData);
+}
+
+document.getElementById('run-btn').addEventListener('click', calculate);
 </script>
 </body>
 </html>
