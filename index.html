@@ -71,6 +71,14 @@
   .canc-select { padding:4px 7px;border:0.5px solid rgba(186,119,23,0.5);border-radius:6px;font-size:12px;background:#faeeda;color:#633806;width:200px; }
   .notes-area { width:100%;padding:8px 10px;border:0.5px solid rgba(0,0,0,0.15);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;min-height:60px;margin-top:0.75rem;background:#fafafa;color:#1a1a18; }
   .notes-area:focus { outline:none;border-color:rgba(0,0,0,0.35); }
+  .manual-entry-toggle { padding: 8px 16px; background: #185fa5; color: #fff; border: none; border-radius: 7px; font-size: 13px; cursor: pointer; }
+  .manual-entry-toggle:hover { opacity: 0.85; }
+  .manual-entry-panel { margin-top: 0.75rem; padding: 14px; background: #f0f4fa; border: 0.5px solid rgba(24,95,165,0.25); border-radius: 10px; display: none; }
+  .manual-entry-panel.open { display: block; }
+  .manual-entry-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 10px; }
+  .manual-entry-grid label { font-size: 12px; color: #5f5e5a; display:block; margin-bottom:4px; }
+  .manual-entry-grid input, .manual-entry-grid select { width:100%; padding:6px 8px; border:0.5px solid rgba(0,0,0,0.2); border-radius:6px; font-size:13px; background:#fff; color:#1a1a18; }
+  .manual-entry-grid input:disabled { background:#eee; color:#999; }
 </style>
 </head>
 <body>
@@ -389,6 +397,7 @@ let lastResults=null;
 let lastTherapistData={};
 let itemStore={};
 let periodStart='', periodEnd='';
+let manualEntrySeq=1;
 
 document.getElementById('period-start').addEventListener('change', checkReady);
 document.getElementById('period-end').addEventListener('change', checkReady);
@@ -726,6 +735,53 @@ function calculate(){
         </table>
       </div>`:''}
       <div style="margin-top:1rem;">
+        <button class="manual-entry-toggle" onclick="toggleManualEntry('${uid}')">+ Add manual entry</button>
+        <div class="manual-entry-panel" id="manual-panel-${uid}">
+          <div class="manual-entry-grid">
+            <div>
+              <label>Section</label>
+              <select id="manual-section-${uid}" onchange="updateManualValueLabel('${uid}')">
+                <option value="">-- Choose --</option>
+                <option value="admin">Admin Hours</option>
+                <option value="r15">15-30min Session</option>
+                <option value="r45">45min Session</option>
+                <option value="r60">60min Session</option>
+                <option value="r90">90min Session</option>
+                ${rates.massage>0?'<option value="massage">Massage Therapy</option>':''}
+                <option value="rz15">Recovery Zone (15min)</option>
+                <option value="rz30">Recovery Zone (30min+)</option>
+                <option value="product">Product (10% commission)</option>
+              </select>
+            </div>
+            <div>
+              <label>Date</label>
+              <input type="date" id="manual-date-${uid}">
+            </div>
+            <div>
+              <label>Description</label>
+              <input type="text" id="manual-name-${uid}" placeholder="e.g. Missed invoice">
+            </div>
+            <div>
+              <label>Patient (optional)</label>
+              <input type="text" id="manual-patient-${uid}" placeholder="Patient name">
+            </div>
+            <div>
+              <label id="manual-value-label-${uid}">Minutes</label>
+              <input type="number" min="0" step="1" id="manual-value-${uid}" placeholder="60">
+            </div>
+            <div>
+              <label>Override amount ($) — optional</label>
+              <input type="number" min="0" step="0.01" id="manual-override-${uid}" placeholder="Leave blank to use rate table">
+            </div>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:8px">
+            <button onclick="submitManualEntry('${therapist}','${uid}')" style="padding:7px 16px;background:#185fa5;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer">Add entry</button>
+            <button onclick="toggleManualEntry('${uid}')" style="padding:7px 16px;background:none;border:0.5px solid rgba(0,0,0,0.2);border-radius:7px;font-size:13px;cursor:pointer">Cancel</button>
+          </div>
+          <p style="font-size:11px;color:#5f5e5a;margin-top:8px">Manual rows get an invoice # like <strong>MANUAL-3</strong> instead of a real Noterro invoice number, so your bookkeeper can tell it wasn't pulled from an export. You can also move it to a different section afterward using its "Move to" dropdown, same as an imported row.</p>
+        </div>
+      </div>
+      <div style="margin-top:1rem;">
         <p style="font-size:12px;color:#5f5e5a;margin-bottom:4px;font-weight:500">Notes</p>
         <textarea class="notes-area" id="notes-${uid}" placeholder="Add any notes for your bookkeeper..."></textarea>
       </div>
@@ -804,13 +860,6 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
   const data = lastTherapistData[therapist];
   if(!data) return;
 
-  // Save manual entries before any re-render
-  const savedSick    = parseFloat(document.getElementById('sick-'+uid)?.value)||0;
-  const savedHoliday = parseFloat(document.getElementById('holiday-'+uid)?.value)||0;
-  const savedVacation= parseFloat(document.getElementById('vacation-'+uid)?.value)||0;
-  const savedBonus   = parseFloat(document.getElementById('bonus-'+uid)?.value)||0;
-  const savedNotes   = document.getElementById('notes-'+uid)?.value||'';
-
   // Remove from source
   if(fromSection==='admin'){
     data.admin = data.admin.filter(i=>i.invoice!==item.invoice);
@@ -843,29 +892,56 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
   else if(targetSection==='massage'){ data.massage=sortByDate(data.massage); }
   else { data.sessions[targetSection]=sortByDate(data.sessions[targetSection]); }
 
-  // Update lastResults totals
-  const totalCommission=Object.values(data.sessions).flat().reduce((s,i)=>s+i.amount,0);
-  const totalAdmin=data.admin.reduce((s,i)=>s+i.amount,0)+data.rz.reduce((s,i)=>s+i.amount,0);
-  const totalMassage=data.massage.reduce((s,i)=>s+i.amount,0);
-  lastResults[therapist].commission=totalCommission;
-  lastResults[therapist].adminPay=totalAdmin;
-  lastResults[therapist].massage=totalMassage;
+  refreshBreakdownTable(therapist, uid);
+}
 
-  // Re-render only the tbody of the breakdown table
+// Rebuilds a therapist's breakdown table from the current state of lastTherapistData,
+// and recomputes every derived total (cleaning, charting, adminPay, rz, massage,
+// commission, products) fresh from the underlying line items rather than patching
+// them incrementally in multiple places. This is what moveRow() used to do inline,
+// pulled out so submitManualEntry() can reuse the exact same rendering + totals logic
+// instead of duplicating ~150 lines. It also fixes a pre-existing bug where moveRow()
+// folded Recovery Zone earnings into adminPay AND left them in rz, double-counting RZ
+// pay in the gross total any time a row was moved via the "Move to" dropdown.
+function refreshBreakdownTable(therapist, uid){
+  const data = lastTherapistData[therapist];
+  const rates = THERAPIST_RATES[therapist];
+  const r = lastResults[therapist];
+  if(!data || !rates || !r) return;
+
+  const sortByDate=(items)=>[...items].sort((a,b)=>a.date.localeCompare(b.date));
+  const sumItems=(items)=>items.reduce((s,i)=>s+i.amount,0);
+
+  const cleaningDays = data.treatmentDays.size;
+  const cleaningHrsRounded = parseFloat((cleaningDays*15/60).toFixed(2));
+  const cleaning = parseFloat((cleaningHrsRounded*rates.admin).toFixed(2));
+  const chartingTreatments = data.chartingCount||0;
+  const chartingHrsRounded = parseFloat((chartingTreatments*10/60).toFixed(2));
+  const totalCharting = parseFloat((chartingHrsRounded*(rates.admin||0)).toFixed(2));
+  const totalAdmin = sumItems(data.admin);
+  const totalRz = sumItems(data.rz);
+  const totalMassage = sumItems(data.massage);
+  const totalCommission = Object.values(data.sessions).flat().reduce((s,i)=>s+i.amount,0);
+  const totalProducts = sumItems(data.products||[]);
+
+  r.cleaning=cleaning; r.cleaningDays=cleaningDays; r.charting=totalCharting;
+  r.adminPay=totalAdmin; r.rz=totalRz; r.massage=totalMassage;
+  r.commission=totalCommission; r.products=totalProducts;
+
+  // Save manual payroll inputs before any re-render (they live inside the tbody we're about to replace)
+  const savedSick    = parseFloat(document.getElementById('sick-'+uid)?.value)||0;
+  const savedHoliday = parseFloat(document.getElementById('holiday-'+uid)?.value)||0;
+  const savedVacation= parseFloat(document.getElementById('vacation-'+uid)?.value)||0;
+  const savedBonus   = parseFloat(document.getElementById('bonus-'+uid)?.value)||0;
+  const savedNotes   = document.getElementById('notes-'+uid)?.value||'';
+
   const card=document.getElementById('card-'+uid);
   if(card){
     const tbody=card.querySelector('.breakdown-table tbody');
     if(tbody){
       const allAdmin=sortByDate([...data.admin,...data.rz]);
-      const sumItems=(items)=>items.reduce((s,i)=>s+i.amount,0);
-      const cleaning=lastResults[therapist].cleaning||0;
-      const cleaningDays=data.treatmentDays.size;
-      const chartingTreatments=data.chartingCount||0;
-      const chartingHrsRounded=parseFloat((chartingTreatments*10/60).toFixed(2));
-      const totalCharting=parseFloat((chartingHrsRounded*(rates.admin||0)).toFixed(2));
       const salary=rates.salary||0;
 
-      // Rebuild tbody HTML using same logic as calculate()
       const colStyle='style="color:#5f5e5a;font-size:11px;white-space:nowrap;padding:4px 8px 4px 0"';
       const COL_HEADERS=['Invoice #','Invoice Date','Service Category','Line Item Name','Service Time','Service Date','Qty','Practitioner','Discount Name','Disc Amt','Subtotal','Tax','Total','Balance','Patient Name','Move to'];
       const SECTION_OPTIONS=[
@@ -879,7 +955,7 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
       const makeRowsInner=(items,currentSection)=>items.map((i)=>{
         const opts=SECTION_OPTIONS.filter(o=>o.val!==currentSection).map(o=>`<option value="${o.val}">${o.label}</option>`).join('');
         itemStore[therapist][i.invoice]=i;
-                const hasBalance=parseFloat(i.balance||0)>0;
+        const hasBalance=parseFloat(i.balance||0)>0;
         const rowStyle=hasBalance?'style="background:#fff0f0"':'';
         return `<tr id="row-${uid}-${i.invoice}" ${rowStyle}>
           <td ${colStyle}>${i.invoice}</td>
@@ -944,7 +1020,6 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
         html+=makeHeaderInner();
         html+=makeRowsInner(data.massage,'massage');
       }
-      // Products section - always show
       const prodItems=data.products||[];
       html+=sectionHeader(`Products (${prodItems.length} · $${sumItems(prodItems).toFixed(2)})`);
       html+=`<tr><td colspan="7" style="font-size:11px;color:#185fa5;padding:3px 0 3px 8px">Commission: 10% of subtotal</td></tr>`;
@@ -954,7 +1029,6 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
         html+=sectionHeader('Salary');
         html+=`<tr><td style="padding-left:8px">Per period</td><td>$${salary.toFixed(2)}</td></tr>`;
       }
-      // Manual entries - restore saved values
       html+=`<tr class="section-header"><td colspan="15">Manual entries</td></tr>
         <tr><td>Sick / Personal Pay</td><td><input type="number" class="manual-input" min="0" step="0.01" value="${savedSick}" id="sick-${uid}" oninput="recalcTotals('${uid}','${therapist}')"></td></tr>
         <tr><td>Holiday Pay</td><td><input type="number" class="manual-input" min="0" step="0.01" value="${savedHoliday}" id="holiday-${uid}" oninput="recalcTotals('${uid}','${therapist}')"></td></tr>
@@ -971,13 +1045,121 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
     }
   }
 
-  // Restore notes
   const notesEl=document.getElementById('notes-'+uid);
   if(notesEl) notesEl.value=savedNotes;
 
-  // Recalculate totals with restored manual values
   recalcTotals(uid, therapist);
 }
+
+function toggleManualEntry(uid){
+  const panel=document.getElementById('manual-panel-'+uid);
+  if(panel) panel.classList.toggle('open');
+}
+
+function updateManualValueLabel(uid){
+  const section=document.getElementById('manual-section-'+uid)?.value;
+  const label=document.getElementById('manual-value-label-'+uid);
+  const input=document.getElementById('manual-value-'+uid);
+  if(!label||!input) return;
+  if(section==='product'){
+    label.textContent='Subtotal ($)';
+    input.step='0.01'; input.placeholder='49.99'; input.disabled=false; input.value='';
+  } else if(section==='rz15'||section==='rz30'){
+    label.textContent='(flat rate — no input needed)';
+    input.value=''; input.disabled=true;
+  } else if(['r15','r45','r60','r90'].includes(section)){
+    label.textContent='(fixed duration rate — no input needed)';
+    input.value=''; input.disabled=true;
+  } else {
+    label.textContent='Minutes';
+    input.step='1'; input.placeholder='60'; input.disabled=false;
+  }
+}
+
+// Adds a manually-entered line (e.g. a session the therapist forgot to invoice in
+// Noterro) directly into the same data structures the CSV import populates, tagged
+// with a MANUAL-N invoice id instead of a real invoice number, then reuses
+// refreshBreakdownTable() so it's rendered and totalled exactly like an imported row —
+// including being movable afterward via its own "Move to" dropdown.
+function submitManualEntry(therapist, uid){
+  const data = lastTherapistData[therapist];
+  const rates = THERAPIST_RATES[therapist];
+  if(!data||!rates) return;
+
+  const section = document.getElementById('manual-section-'+uid)?.value;
+  const dateVal = document.getElementById('manual-date-'+uid)?.value;
+  const nameVal = (document.getElementById('manual-name-'+uid)?.value||'').trim() || 'Manual entry';
+  const patientVal = (document.getElementById('manual-patient-'+uid)?.value||'').trim();
+  const rawVal = parseFloat(document.getElementById('manual-value-'+uid)?.value)||0;
+
+  if(!section){ alert('Choose a section for this entry.'); return; }
+  if(!dateVal){ alert('Enter a date for this entry.'); return; }
+
+  const invoice = 'MANUAL-'+(manualEntrySeq++);
+  const base = {
+    invoice, invoiceDate: dateVal, name: nameVal, date: dateVal,
+    quantity:'1', practitioner: therapist, discountName:'', discountAmount:'',
+    taxAmount:'', total:'', balance:'0', patient: patientVal, amount:0
+  };
+
+  if(section==='admin'){
+    const mins = rawVal>0?rawVal:60;
+    base.serviceCategory='Admin'; base.serviceTime=String(mins); base.subtotal='';
+    base.amount = parseFloat((rates.admin*(mins/60)).toFixed(2));
+    data.admin.push(base);
+  } else if(section==='massage'){
+    const mins = rawVal>0?rawVal:60;
+    base.serviceCategory='Massage Therapy'; base.serviceTime=String(mins); base.subtotal='';
+    base.massageMins=mins;
+    base.amount = parseFloat((rates.massage*(mins/60)).toFixed(2));
+    data.massage.push(base);
+    data.treatmentDays.add(dateVal);
+  } else if(section==='rz15'){
+    base.serviceCategory='Recovery Zone'; base.serviceTime='15'; base.subtotal='';
+    base.amount = rates.rz15||6;
+    data.rz.push(base);
+  } else if(section==='rz30'){
+    base.serviceCategory='Recovery Zone'; base.serviceTime='30'; base.subtotal='';
+    base.amount = rates.rz30||12;
+    data.rz.push(base);
+  } else if(section==='product'){
+    base.serviceCategory=''; base.subtotal=String(rawVal); base.serviceTime='';
+    base.amount = parseFloat((rawVal*0.10).toFixed(2));
+    data.products = data.products||[];
+    data.products.push(base);
+  } else if(['r15','r45','r60','r90'].includes(section)){
+    const minsMap = {r15:30,r45:45,r60:60,r90:90};
+    const mins = minsMap[section];
+    base.serviceCategory='Treatment'; base.serviceTime=String(mins); base.subtotal='';
+    base.amount = getDurationRate(rates, mins);
+    data.sessions[section].push(base);
+    data.treatmentDays.add(dateVal);
+    data.chartingCount = (data.chartingCount||0)+1;
+  } else {
+    return;
+  }
+
+  // Override takes priority over the rate-table computation above if the user typed one in.
+  const overrideVal = parseFloat(document.getElementById('manual-override-'+uid)?.value);
+  if(!isNaN(overrideVal) && overrideVal>=0){
+    base.amount = parseFloat(overrideVal.toFixed(2));
+  }
+
+  if(!itemStore[therapist]) itemStore[therapist]={};
+  itemStore[therapist][base.invoice]=base;
+
+  refreshBreakdownTable(therapist, uid);
+
+  document.getElementById('manual-name-'+uid).value='';
+  document.getElementById('manual-patient-'+uid).value='';
+  document.getElementById('manual-value-'+uid).value='';
+  document.getElementById('manual-override-'+uid).value='';
+  document.getElementById('manual-date-'+uid).value='';
+  document.getElementById('manual-section-'+uid).value='';
+  updateManualValueLabel(uid);
+  toggleManualEntry(uid);
+}
+
 
 
 function copyTherapistSummary(therapist, uid){
