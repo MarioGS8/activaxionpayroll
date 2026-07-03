@@ -353,6 +353,8 @@ function makeMassageRows(items,uid,therapist,rates){
     {val:'r45',label:'45min Sessions'},
     {val:'r60',label:'60min Sessions'},
     {val:'r90',label:'90min Sessions'},
+    {val:'product',label:'Products'},
+    {val:'delete',label:'🗑 Delete this line'},
   ];
   return items.map(i=>{
     const hasBalance=parseFloat(i.balance||0)>0;
@@ -540,6 +542,7 @@ function calculate(){
       {val:'r90',label:'90min Sessions'},
       {val:'massage',label:'Massage Therapy'},
       {val:'product',label:'Products'},
+      {val:'delete',label:'🗑 Delete this line'},
     ];
     // Store items globally by invoice# for safe retrieval in moveRow
     if(!itemStore[therapist]) itemStore[therapist]={};
@@ -861,14 +864,25 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
   const data = lastTherapistData[therapist];
   if(!data) return;
 
-  // Remove from source
+  // Remove from source. 'product' is handled explicitly here (and below on the target
+  // side) — previously it fell into the generic sessions branch, which tried
+  // data.sessions['product'] (undefined) and would throw, silently breaking every
+  // move involving a Product row in either direction.
   if(fromSection==='admin'){
     data.admin = data.admin.filter(i=>i.invoice!==item.invoice);
     data.rz = data.rz.filter(i=>i.invoice!==item.invoice);
   } else if(fromSection==='massage'){
     data.massage = data.massage.filter(i=>i.invoice!==item.invoice);
+  } else if(fromSection==='product'){
+    data.products = (data.products||[]).filter(i=>i.invoice!==item.invoice);
   } else {
     data.sessions[fromSection] = data.sessions[fromSection].filter(i=>i.invoice!==item.invoice);
+  }
+
+  if(targetSection==='delete'){
+    delete itemStore[therapist][item.invoice];
+    refreshBreakdownTable(therapist, uid);
+    return;
   }
 
   // Recalculate item amount for new section
@@ -881,6 +895,11 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
     const mins = parseDuration(item.name)||60;
     item.amount = rates.massage*(mins/60);
     data.massage.push(item);
+  } else if(targetSection==='product'){
+    const subtotal = parseFloat(item.subtotal)||0;
+    item.amount = parseFloat((subtotal*0.10).toFixed(2));
+    data.products = data.products||[];
+    data.products.push(item);
   } else {
     const minsMap = {r15:30,r45:45,r60:60,r90:90};
     item.amount = getDurationRate(rates, minsMap[targetSection]||60);
@@ -891,6 +910,7 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
   const sortByDate=(items)=>[...items].sort((a,b)=>a.date.localeCompare(b.date));
   if(targetSection==='admin'){ data.admin=sortByDate(data.admin); }
   else if(targetSection==='massage'){ data.massage=sortByDate(data.massage); }
+  else if(targetSection==='product'){ data.products=sortByDate(data.products); }
   else { data.sessions[targetSection]=sortByDate(data.sessions[targetSection]); }
 
   refreshBreakdownTable(therapist, uid);
@@ -952,6 +972,8 @@ function refreshBreakdownTable(therapist, uid){
         {val:'r60',label:'60min Sessions'},
         {val:'r90',label:'90min Sessions'},
         {val:'massage',label:'Massage Therapy'},
+        {val:'product',label:'Products'},
+        {val:'delete',label:'🗑 Delete this line'},
       ];
       const makeRowsInner=(items,currentSection)=>items.map((i)=>{
         const opts=SECTION_OPTIONS.filter(o=>o.val!==currentSection).map(o=>`<option value="${o.val}">${o.label}</option>`).join('');
