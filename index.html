@@ -453,10 +453,10 @@ function calculate(){
     const d=therapistData[practitioner];
     const patientName=(row['Patient Name']||'').trim();
     const invoiceDate=(row['Invoice Date']||'').split(' ')[0];
+    const invoiceNum=(row['Invoice #']||'').trim();
     if(invoiceDate && rawDate && invoiceDate !== rawDate){
       therapistData[practitioner].dateMismatches.push({invoice:invoiceNum,invoiceDate,serviceDate:rawDate,name,patient:patientName});
     }
-    const invoiceNum=(row['Invoice #']||'').trim();
     const balance=parseFloat(row['Balance'])||0;
     const rawEntry={
       invoice:invoiceNum,
@@ -658,7 +658,8 @@ function calculate(){
               rows+=summaryRow('60min Therapy',(rates.r60/60*60).toFixed(2),r60Hrs,r60Pay);
               rows+=summaryRow('90min Therapy',(rates.r90/90*60).toFixed(2),r90Hrs,r90Pay);
               if(rates.massage>0) rows+=summaryRow('Massage Therapy',(rates.massage).toFixed(2),massHrs,massPay);
-              rows+=summaryRow('Commission (RZ + Products)',null,null,(sumItems(data.rz)+(data.products||[]).reduce((s,i)=>s+i.amount,0)).toFixed(2));
+              rows+=summaryRow('Recovery Zone',null,null,sumItems(data.rz).toFixed(2));
+              rows+=summaryRow('Product Commission (10%)',null,null,prodPay);
               if(salary>0) rows+=summaryRow('Salary',(rates.salary?calcAvgWage(rates).toFixed(2):null),(rates.salary?(rates.salary/calcAvgWage(rates)).toFixed(2):null),salPay);
               return rows;
             })()}
