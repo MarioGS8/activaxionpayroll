@@ -411,9 +411,42 @@ dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.a
 dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('dragover'));
 dropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.classList.remove('dragover');if(e.dataTransfer.files[0])loadFile(e.dataTransfer.files[0]);});
 fileInput.addEventListener('change',()=>{if(fileInput.files[0])loadFile(fileInput.files[0]);});
+const REQUIRED_HEADERS=['Practitioner','Subtotal'];
+const REQUIRED_DATE_HEADERS=['Service Date','Invoice Date'];
 function loadFile(file){
   const reader=new FileReader();
-  reader.onload=e=>{csvData=parseCSV(e.target.result);document.getElementById('filename-display').textContent=file.name+` (${csvData.length-1} rows)`;checkReady();};
+  reader.onload=e=>{
+    const errEl=document.getElementById('error-msg');
+    let parsed;
+    try{
+      parsed=parseCSV(e.target.result);
+    }catch(err){
+      errEl.textContent='Could not read this file as CSV. Make sure you exported the Practitioner Sales report and not something else.';
+      errEl.style.display='block';
+      csvData=null; document.getElementById('filename-display').textContent=''; checkReady();
+      return;
+    }
+    if(!parsed||parsed.length===0){
+      errEl.textContent='This file has no data rows.';
+      errEl.style.display='block';
+      csvData=null; document.getElementById('filename-display').textContent=''; checkReady();
+      return;
+    }
+    const headers=Object.keys(parsed[0]);
+    const missingRequired=REQUIRED_HEADERS.filter(h=>!headers.includes(h));
+    const hasDateCol=REQUIRED_DATE_HEADERS.some(h=>headers.includes(h));
+    if(missingRequired.length>0||!hasDateCol){
+      const missing=[...missingRequired,...(hasDateCol?[]:['Service Date/Invoice Date'])];
+      errEl.textContent=`This file is missing expected column(s): ${missing.join(', ')}. Check that this is the correct Noterro export — Reports → Finance → Practitioner Sales.`;
+      errEl.style.display='block';
+      csvData=null; document.getElementById('filename-display').textContent=''; checkReady();
+      return;
+    }
+    errEl.style.display='none';
+    csvData=parsed;
+    document.getElementById('filename-display').textContent=file.name+` (${csvData.length} rows)`;
+    checkReady();
+  };
   reader.readAsText(file);
 }
 function checkReady(){
@@ -432,13 +465,15 @@ function calculate(){
   const errEl=document.getElementById('error-msg'); errEl.style.display='none';
 
   const therapistData={};
+  const diag={total:0,noPractitioner:0,unknownPractitioner:0,noDate:0,outOfRange:0,unknownNames:new Set()};
 
   for(const row of csvData){
-    const practitioner=(row['Practitioner']||'').trim(); if(!practitioner) continue;
-    const rates=THERAPIST_RATES[practitioner]; if(!rates) continue;
-    const rawDate=((row['Service Date']||'').split(' ')[0])||((row['Invoice Date']||'').split(' ')[0]); if(!rawDate) continue;
+    diag.total++;
+    const practitioner=(row['Practitioner']||'').trim(); if(!practitioner){ diag.noPractitioner++; continue; }
+    const rates=THERAPIST_RATES[practitioner]; if(!rates){ diag.unknownPractitioner++; diag.unknownNames.add(practitioner); continue; }
+    const rawDate=((row['Service Date']||'').split(' ')[0])||((row['Invoice Date']||'').split(' ')[0]); if(!rawDate){ diag.noDate++; continue; }
     const svcDate=new Date(rawDate+'T00:00:00');
-    if(svcDate<winStart||svcDate>winEnd) continue;
+    if(svcDate<winStart||svcDate>winEnd){ diag.outOfRange++; continue; }
     if(!therapistData[practitioner]) therapistData[practitioner]={
       sessions:{r15:[],r30:[],r45:[],r60:[],r90:[]},
       massage:[],admin:[],rz:[],products:[],charting:0,chartingCount:0,treatmentDays:new Set(),flags:[],dateMismatches:[],rawRows:[]
@@ -495,7 +530,15 @@ function calculate(){
   }
 
   if(Object.keys(therapistData).length===0){
-    errEl.textContent='No matching data found for this date range.';
+    const reasons=[];
+    if(diag.total===0) reasons.push('the file had no data rows');
+    if(diag.noPractitioner>0) reasons.push(`${diag.noPractitioner} row(s) had no Practitioner value`);
+    if(diag.unknownPractitioner>0) reasons.push(`${diag.unknownPractitioner} row(s) had a Practitioner not in your rate table (${[...diag.unknownNames].slice(0,4).join(', ')}${diag.unknownNames.size>4?', …':''})`);
+    if(diag.noDate>0) reasons.push(`${diag.noDate} row(s) had no Service/Invoice Date`);
+    if(diag.outOfRange>0) reasons.push(`${diag.outOfRange} row(s) fell outside ${periodStart} to ${periodEnd}`);
+    errEl.textContent = reasons.length>0
+      ? `No matching data for this period. Checked ${diag.total} row(s): ${reasons.join('; ')}.`
+      : 'No matching data found for this date range.';
     errEl.style.display='block';
     return;
   }
@@ -630,9 +673,8 @@ function calculate(){
             })()}
             <tr style="background:#1a1a18"><td colspan="14" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#fff;letter-spacing:0.02em">${therapist} — Summary</td></tr>
             ${(()=>{
-              const allAdminItems=[...data.admin,...data.rz];
-              const adminCleanHrs=(allAdmin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(data.treatmentDays.size*15/60)).toFixed(2);
-              const adminCleanPay=(sumItems(allAdminItems)+cleaning).toFixed(2);
+              const adminCleanHrs=(data.admin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(data.treatmentDays.size*15/60)).toFixed(2);
+              const adminCleanPay=(sumItems(data.admin)+cleaning).toFixed(2);
               const chartHrs=(Object.values(data.sessions).flat().length*10/60).toFixed(2);
               const chartPay=totalCharting.toFixed(2);
               const r15Hrs=(data.sessions.r15.length*30/60).toFixed(2);
@@ -1013,7 +1055,7 @@ function refreshBreakdownTable(therapist, uid){
       }
       html+=sectionHeader(`Cleaning · ${cleaningDays} days worked`);
       html+=`<tr><td style="padding-left:8px">15min admin × ${cleaningDays} days</td><td>$${cleaning.toFixed(2)}</td></tr>`;
-      html+=`<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Admin & Cleaning Total: ${(allAdmin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(cleaningDays*15/60)).toFixed(2)} hrs</td><td colspan="2" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">${rates.admin.toFixed(2)}/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$${(sumItems(allAdmin)+cleaning).toFixed(2)}</td></tr>`;
+      html+=`<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Admin & Cleaning Total: ${(data.admin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(cleaningDays*15/60)).toFixed(2)} hrs</td><td colspan="2" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">${rates.admin.toFixed(2)}/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$${(sumItems(data.admin)+cleaning).toFixed(2)}</td></tr>`;
       if(totalCharting>0){
         const treatCount=Object.values(data.sessions).flat().length;
         html+=sectionHeader(`Charting · ${treatCount} treatments`);
@@ -1055,9 +1097,8 @@ function refreshBreakdownTable(therapist, uid){
       }
       html+=`<tr style="background:#1a1a18"><td colspan="14" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#fff;letter-spacing:0.02em">${therapist} — Summary</td></tr>`;
       html+=(()=>{
-        const allAdminItems=[...data.admin,...data.rz];
-        const adminCleanHrs=(allAdminItems.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(cleaningDays*15/60)).toFixed(2);
-        const adminCleanPay=(sumItems(allAdminItems)+cleaning).toFixed(2);
+        const adminCleanHrs=(data.admin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(cleaningDays*15/60)).toFixed(2);
+        const adminCleanPay=(sumItems(data.admin)+cleaning).toFixed(2);
         const chartHrs=(Object.values(data.sessions).flat().length*10/60).toFixed(2);
         const chartPay=totalCharting.toFixed(2);
         const r15Hrs=(data.sessions.r15.length*30/60).toFixed(2);
@@ -1166,6 +1207,16 @@ function submitManualEntry(therapist, uid){
 
   if(!section){ alert('Choose a section for this entry.'); return; }
   if(!dateVal){ alert('Enter a date for this entry.'); return; }
+
+  const allExisting=[...data.sessions.r15,...data.sessions.r45,...data.sessions.r60,...data.sessions.r90,
+    ...data.admin,...data.rz,...data.massage,...(data.products||[])];
+  const sameDate=allExisting.filter(i=>i.date===dateVal);
+  const samePatientSameDate=patientVal && sameDate.some(i=>i.patient && i.patient.toLowerCase()===patientVal.toLowerCase());
+  if(samePatientSameDate){
+    if(!confirm(`${therapist} already has an entry on ${dateVal} for patient "${patientVal}" from the imported file. Add this anyway? Only continue if you're sure this isn't already invoiced.`)) return;
+  } else if(sameDate.length>0){
+    if(!confirm(`${therapist} already has ${sameDate.length} entr${sameDate.length===1?'y':'ies'} on ${dateVal} from the imported file. Add this manual entry anyway?`)) return;
+  }
 
   const invoice = 'MANUAL-'+(manualEntrySeq++);
   const base = {
@@ -1341,11 +1392,11 @@ function downloadExcel(){
     const notes=document.getElementById('notes-'+uid)?.value||'';
     const avg=n(calcAvgWage(rates))||1;
 
-    const allAdmin=[...data.admin,...data.rz];
-    const adminHrs=parseFloat(allAdmin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+parseFloat((m/60).toFixed(2));},0).toFixed(2));
+    const adminHrs=parseFloat(data.admin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+parseFloat((m/60).toFixed(2));},0).toFixed(2));
     const cleanHrs=parseFloat((data.treatmentDays.size*15/60).toFixed(2));
     const adminCleanHrs=parseFloat((adminHrs+cleanHrs).toFixed(2));
     const adminCleanPay=n(r.adminPay)+n(r.cleaning);
+    const rzPay=n(r.rz);
 
     const chartTreat=data.chartingCount||0;
     const chartHrs=parseFloat((chartTreat*10/60).toFixed(2));
@@ -1375,8 +1426,9 @@ function downloadExcel(){
     rows.push(['90min Therapy', fmt(rates.r90/90*60)+'/hr', r90Hrs+' hrs', fmt(r90Pay)]);
     if(rates.massage>0) rows.push(['Massage Therapy', fmt(rates.massage)+'/hr', massHrs+' hrs', fmt(massPay)]);
     rows.push(['Products Commission', '', '', fmt(prodPay)]);
+    if(rzPay>0) rows.push(['Recovery Zone Commission', '', '', fmt(rzPay)]);
     if(salPay>0) rows.push(['Salary', fmt(avg)+'/hr', salHrs+' hrs', fmt(salPay)]);
-    rows.push(['Subtotal earned', '', '', fmt(n(r.commission)+n(r.charting)+n(r.adminPay)+n(r.massage)+n(r.products)+n(r.cleaning)+n(r.salary))]);
+    rows.push(['Subtotal earned', '', '', fmt(n(r.commission)+n(r.charting)+n(r.adminPay)+n(r.massage)+n(r.products)+n(r.rz)+n(r.cleaning)+n(r.salary))]);
     rows.push([]);
     rows.push(['Sick/Personal Pay', fmt(avg)+'/hr', n(r.sick)>0?parseFloat((n(r.sick)/avg).toFixed(2))+' hrs':'0.00 hrs', fmt(r.sick)]);
     rows.push(['Holiday Pay', fmt(avg)+'/hr', n(r.holiday)>0?parseFloat((n(r.holiday)/avg).toFixed(2))+' hrs':'0.00 hrs', fmt(r.holiday)]);
