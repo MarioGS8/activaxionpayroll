@@ -153,6 +153,7 @@
   <div class="error-msg" id="error-msg" style="display:none"></div>
   <div class="results" id="results"></div>
   <button class="download-btn" id="download-btns" style="display:none" onclick="downloadExcel()">⬇ Download Excel for bookkeeper</button>
+  <button class="download-btn" id="download-backup-btn" style="display:none;background:#185fa5;margin-top:0.5rem" onclick="downloadFullBackup()">⬇ Download full backup (every line, all therapists)</button>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -302,15 +303,19 @@ function getDurationRate(rates,mins){
 }
 
 function classifyAndEarn(cat,name,subtotal,rates,productCat,serviceTime){
+  if(isCancellation(cat,name)) return {commission:0,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Cancellation',flag:true,totalWithTax:0};
   if(productCat) return {commission:subtotal*0.10,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Product (10%)'};
   if(isProduct(cat,name)) return {commission:subtotal*0.10,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Product (10%)'};
-  if(isCancellation(cat,name)) return {commission:0,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Cancellation',flag:true,totalWithTax:0};
   if(isRecoveryZone(cat)){
     if(isRLT(name)) return {commission:0,charting:0,admin:0,massage:0,rz:rates.rz15||6,isTreat:false,label:'RZ 15min'};
     return {commission:0,charting:0,admin:0,massage:0,rz:rates.rz30||12,isTreat:false,label:'RZ 30min+'};
   }
   if(isAdminHours(cat,name)){
-    if(/sick|personal day/i.test(name)) return {commission:0,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Skip'};
+    if(/sick|personal day|vacation/i.test(name)){
+      const excludedMins=serviceTime||parseDuration(name)||60;
+      const wouldBeAmount=parseFloat((rates.admin*(excludedMins/60)).toFixed(2));
+      return {commission:0,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Excluded — Sick/Personal/Vacation',excludedAdminReview:true,wouldBeAmount};
+    }
     if(/neurotracker.*consult/i.test(name)) return {commission:0,charting:0,admin:parseFloat((0.25*rates.admin).toFixed(2)),massage:0,rz:0,isTreat:false,label:'Admin 15min'};
     const mins=serviceTime||parseDuration(name)||60;
     const adminHrs=parseFloat((mins/60).toFixed(2));
@@ -348,7 +353,9 @@ function makeMassageHeader(){
 function makeMassageRows(items,uid,therapist,rates){
   const cs='style="color:#5f5e5a;font-size:11px;white-space:nowrap;padding:4px 8px 4px 0"';
   const SECTION_OPTIONS=[
-    {val:'admin',label:'Admin / Recovery Zone'},
+    {val:'admin',label:'Admin Hours'},
+    {val:'rz15',label:'Recovery Zone (15min)'},
+    {val:'rz30',label:'Recovery Zone (30min+)'},
     {val:'r15',label:'15-30min Sessions'},
     {val:'r45',label:'45min Sessions'},
     {val:'r60',label:'60min Sessions'},
@@ -411,7 +418,7 @@ dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.a
 dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('dragover'));
 dropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.classList.remove('dragover');if(e.dataTransfer.files[0])loadFile(e.dataTransfer.files[0]);});
 fileInput.addEventListener('change',()=>{if(fileInput.files[0])loadFile(fileInput.files[0]);});
-const REQUIRED_HEADERS=['Practitioner','Subtotal'];
+const REQUIRED_HEADERS=['Practitioner','Subtotal','Service Category'];
 const REQUIRED_DATE_HEADERS=['Service Date','Invoice Date'];
 function loadFile(file){
   const reader=new FileReader();
@@ -476,7 +483,7 @@ function calculate(){
     if(svcDate<winStart||svcDate>winEnd){ diag.outOfRange++; continue; }
     if(!therapistData[practitioner]) therapistData[practitioner]={
       sessions:{r15:[],r30:[],r45:[],r60:[],r90:[]},
-      massage:[],admin:[],rz:[],products:[],charting:0,chartingCount:0,treatmentDays:new Set(),flags:[],dateMismatches:[],rawRows:[]
+      massage:[],admin:[],rz:[],products:[],charting:0,chartingCount:0,treatmentDays:new Set(),flags:[],dateMismatches:[],excludedAdmin:[],rawRows:[]
     };
     const cat=(row['Service Category']||'').trim();
     const productCategory=(row['Product Category']||'').trim();
@@ -484,6 +491,11 @@ function calculate(){
     const subtotal=parseFloat(row['Subtotal'])||0;
     const serviceTimeVal=parseFloat((row['Service Time']||'').trim())||0;
     const earn=classifyAndEarn(cat,name,subtotal,rates,productCategory,serviceTimeVal);
+    if(earn.excludedAdminReview){
+      const invoiceNum0=(row['Invoice #']||'').trim();
+      therapistData[practitioner].excludedAdmin.push({invoice:invoiceNum0,date:rawDate,name,wouldBeAmount:earn.wouldBeAmount});
+      continue;
+    }
     if(earn.label==='Skip') continue;
     const totalWithTax=parseFloat(row['Total'])||0;
     if(earn.flag){ therapistData[practitioner].flags.push({date:rawDate,name,totalWithTax}); continue; }
@@ -578,7 +590,9 @@ function calculate(){
     const colStyle='style="color:#5f5e5a;font-size:11px;white-space:nowrap;padding:4px 8px 4px 0"';
     const COL_HEADERS=['Invoice #','Invoice Date','Service Category','Line Item Name','Service Time','Service Date','Qty','Practitioner','Discount Name','Disc Amt','Subtotal','Tax','Total','Balance','Patient Name','Move to'];
     const SECTION_OPTIONS=[
-      {val:'admin',label:'Admin / Recovery Zone'},
+      {val:'admin',label:'Admin Hours'},
+      {val:'rz15',label:'Recovery Zone (15min)'},
+      {val:'rz30',label:'Recovery Zone (30min+)'},
       {val:'r15',label:'15-30min Sessions'},
       {val:'r45',label:'45min Sessions'},
       {val:'r60',label:'60min Sessions'},
@@ -779,6 +793,16 @@ function calculate(){
           </tbody>
         </table>
       </div>`:''}
+      ${(data.excludedAdmin&&data.excludedAdmin.length>0)?`
+      <div style="margin-top:1rem;padding:12px;background:#faeeda;border-radius:8px;">
+        <p style="font-size:12px;color:#854f0b;font-weight:500;margin-bottom:8px">⚠ Excluded from Admin Hours — Sick/Personal/Vacation invoice lines (${data.excludedAdmin.length} line${data.excludedAdmin.length>1?'s':''}). Check these are covered by the manual Sick/Holiday/Vacation Pay fields below.</p>
+        <table class="breakdown-table">
+          <thead><tr><th>Invoice #</th><th>Date</th><th>Line Item</th><th style="text-align:right">Would-be admin $</th></tr></thead>
+          <tbody>
+            ${data.excludedAdmin.map(x=>`<tr style="color:#854f0b"><td style="font-size:12px">${x.invoice}</td><td style="font-size:12px">${x.date}</td><td style="font-size:12px">${x.name.length>40?x.name.substring(0,40)+'…':x.name}</td><td style="font-size:12px;text-align:right">$${x.wouldBeAmount.toFixed(2)}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`:''}
       <div style="margin-top:1rem;">
         <button class="manual-entry-toggle" onclick="toggleManualEntry('${uid}')">+ Add manual entry</button>
         <div class="manual-entry-panel" id="manual-panel-${uid}">
@@ -840,6 +864,7 @@ function calculate(){
   }
 
   document.getElementById('download-btns').style.display='block';
+  document.getElementById('download-backup-btn').style.display='block';
 }
 
 function toggleCard(uid){
@@ -911,7 +936,7 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
   // side) — previously it fell into the generic sessions branch, which tried
   // data.sessions['product'] (undefined) and would throw, silently breaking every
   // move involving a Product row in either direction.
-  if(fromSection==='admin'){
+  if(fromSection==='admin'||fromSection==='rz15'||fromSection==='rz30'){
     data.admin = data.admin.filter(i=>i.invoice!==item.invoice);
     data.rz = data.rz.filter(i=>i.invoice!==item.invoice);
   } else if(fromSection==='massage'){
@@ -934,6 +959,12 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
     const mins = parseDuration(item.name)||60;
     item.amount = rates.admin*(mins/60);
     data.admin.push(item);
+  } else if(targetSection==='rz15'){
+    item.amount = rates.rz15||6;
+    data.rz.push(item);
+  } else if(targetSection==='rz30'){
+    item.amount = rates.rz30||12;
+    data.rz.push(item);
   } else if(targetSection==='massage'){
     const mins = parseDuration(item.name)||60;
     item.amount = rates.massage*(mins/60);
@@ -952,6 +983,7 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
   // Sort moved section
   const sortByDate=(items)=>[...items].sort((a,b)=>a.date.localeCompare(b.date));
   if(targetSection==='admin'){ data.admin=sortByDate(data.admin); }
+  else if(targetSection==='rz15'||targetSection==='rz30'){ data.rz=sortByDate(data.rz); }
   else if(targetSection==='massage'){ data.massage=sortByDate(data.massage); }
   else if(targetSection==='product'){ data.products=sortByDate(data.products); }
   else { data.sessions[targetSection]=sortByDate(data.sessions[targetSection]); }
@@ -1009,7 +1041,9 @@ function refreshBreakdownTable(therapist, uid){
       const colStyle='style="color:#5f5e5a;font-size:11px;white-space:nowrap;padding:4px 8px 4px 0"';
       const COL_HEADERS=['Invoice #','Invoice Date','Service Category','Line Item Name','Service Time','Service Date','Qty','Practitioner','Discount Name','Disc Amt','Subtotal','Tax','Total','Balance','Patient Name','Move to'];
       const SECTION_OPTIONS=[
-        {val:'admin',label:'Admin / Recovery Zone'},
+        {val:'admin',label:'Admin Hours'},
+        {val:'rz15',label:'Recovery Zone (15min)'},
+        {val:'rz30',label:'Recovery Zone (30min+)'},
         {val:'r15',label:'15-30min Sessions'},
         {val:'r45',label:'45min Sessions'},
         {val:'r60',label:'60min Sessions'},
@@ -1332,14 +1366,90 @@ function copyTherapistSummary(therapist, uid){
 }
 
 
-function downloadTherapistSummary(therapist){
-  const r=lastResults[therapist];
-  if(!r) return;
-  const data=lastTherapistData[therapist];
-  if(!data) return;
+function buildTherapistSummaryRows(therapist,r,data,rates){
+  const n=(v)=>isNaN(v)||v===undefined||v===null?0:parseFloat(v)||0;
+  const fmt=(v)=>'$'+n(v).toFixed(2);
+  const uid=therapist.replace(/\s+/g,'_');
+  const notes=document.getElementById('notes-'+uid)?.value||'';
+  const avg=n(calcAvgWage(rates))||1;
+
+  const adminHrs=parseFloat(data.admin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+parseFloat((m/60).toFixed(2));},0).toFixed(2));
+  const cleanHrs=parseFloat((data.treatmentDays.size*15/60).toFixed(2));
+  const adminCleanHrs=parseFloat((adminHrs+cleanHrs).toFixed(2));
+  const adminCleanPay=n(r.adminPay)+n(r.cleaning);
+  const rzPay=n(r.rz);
+
+  const chartTreat=data.chartingCount||0;
+  const chartHrs=parseFloat((chartTreat*10/60).toFixed(2));
+  const chartPay=n(r.charting);
+
+  const r15Hrs=parseFloat((data.sessions.r15.length*30/60).toFixed(2));
+  const r15Pay=data.sessions.r15.reduce((s,i)=>s+i.amount,0);
+  const r45Hrs=parseFloat((data.sessions.r45.length*45/60).toFixed(2));
+  const r45Pay=data.sessions.r45.reduce((s,i)=>s+i.amount,0);
+  const r60Hrs=parseFloat((data.sessions.r60.length*60/60).toFixed(2));
+  const r60Pay=data.sessions.r60.reduce((s,i)=>s+i.amount,0);
+  const r90Hrs=parseFloat((data.sessions.r90.length*90/60).toFixed(2));
+  const r90Pay=data.sessions.r90.reduce((s,i)=>s+i.amount,0);
+  const massHrs=parseFloat(data.massage.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+parseFloat((m/60).toFixed(2));},0).toFixed(2));
+  const massPay=data.massage.reduce((s,i)=>s+i.amount,0);
+  const prodPay=n(r.products);
+  const salPay=n(r.salary);
+  const salHrs=salPay>0?parseFloat((salPay/avg).toFixed(2)):0;
+
+  const rows=[];
+  rows.push([therapist]);
+  rows.push(['Component','Rate','Hours','Amount']);
+  rows.push(['Admin & Cleaning', fmt(rates.admin)+'/hr', adminCleanHrs+' hrs', fmt(adminCleanPay)]);
+  rows.push(['Charting', fmt(rates.admin)+'/hr', chartHrs+' hrs', fmt(chartPay)]);
+  rows.push(['15-30min Therapy', fmt(rates.r30/30*60)+'/hr', r15Hrs+' hrs', fmt(r15Pay)]);
+  rows.push(['45min Therapy', fmt(rates.r45/45*60)+'/hr', r45Hrs+' hrs', fmt(r45Pay)]);
+  rows.push(['60min Therapy', fmt(rates.r60/60*60)+'/hr', r60Hrs+' hrs', fmt(r60Pay)]);
+  rows.push(['90min Therapy', fmt(rates.r90/90*60)+'/hr', r90Hrs+' hrs', fmt(r90Pay)]);
+  if(rates.massage>0) rows.push(['Massage Therapy', fmt(rates.massage)+'/hr', massHrs+' hrs', fmt(massPay)]);
+  rows.push(['Products Commission', '', '', fmt(prodPay)]);
+  if(rzPay>0) rows.push(['Recovery Zone Commission', '', '', fmt(rzPay)]);
+  rows.push(['Total Commissions', '', '', fmt(prodPay+rzPay)]);
+  if(salPay>0) rows.push(['Salary', fmt(avg)+'/hr', salHrs+' hrs', fmt(salPay)]);
+  rows.push(['Subtotal earned', '', '', fmt(n(r.commission)+n(r.charting)+n(r.adminPay)+n(r.massage)+n(r.products)+n(r.rz)+n(r.cleaning)+n(r.salary))]);
+  rows.push([]);
+  rows.push(['Sick/Personal Pay', fmt(avg)+'/hr', n(r.sick)>0?parseFloat((n(r.sick)/avg).toFixed(2))+' hrs':'0.00 hrs', fmt(r.sick)]);
+  rows.push(['Holiday Pay', fmt(avg)+'/hr', n(r.holiday)>0?parseFloat((n(r.holiday)/avg).toFixed(2))+' hrs':'0.00 hrs', fmt(r.holiday)]);
+  rows.push(['Vacation Pay', fmt(avg)+'/hr', n(r.vacation)>0?parseFloat((n(r.vacation)/avg).toFixed(2))+' hrs':'0.00 hrs', fmt(r.vacation)]);
+  rows.push(['Gross Payroll', '', '', fmt(r.gross)]);
+  rows.push(['RRSP EE (6%)', '', '', fmt(r.rrspEE)]);
+  rows.push(['RRSP ER (3%)', '', '', fmt(r.rrspER)]);
+  rows.push(['Bonus (excl. RRSP)', '', '', fmt(r.bonus)]);
+  rows.push(['Total Payroll', '', '', fmt(r.total)]);
+  if(notes) rows.push(['Notes', notes]);
+  return rows;
+}
+
+function downloadExcel(){
   const wb=XLSX.utils.book_new();
+  const rows=[];
+
+  for(const[therapist,r]of Object.entries(lastResults)){
+    const data=lastTherapistData[therapist];
+    const rates=THERAPIST_RATES[therapist];
+    if(!data||!rates) continue;
+    rows.push(...buildTherapistSummaryRows(therapist,r,data,rates));
+    rows.push([]);
+    rows.push([]);
+  }
+
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:25},{wch:14},{wch:12},{wch:14}];
+  const sheetName=`${periodStart} to ${periodEnd}`.substring(0,31);
+  XLSX.utils.book_append_sheet(wb,ws,sheetName);
+  XLSX.writeFile(wb,`Payroll_${periodStart}_to_${periodEnd}.xlsx`);
+}
+
+// Builds the full-detail line-item rows for one therapist (every invoice line, every
+// section), reusing the same section layout as the per-therapist download.
+function buildTherapistDetailRows(therapist,data){
   const rows=[
-    [`${therapist} — Payroll Summary ${periodStart} to ${periodEnd}`],
+    [`${therapist} — Full Detail ${periodStart} to ${periodEnd}`],
     [],
   ];
   const HEADERS=['Invoice #','Invoice Date','Line Item Name','Service Time','Service Date','Qty','Patient Name'];
@@ -1350,8 +1460,8 @@ function downloadTherapistSummary(therapist){
     for(const i of items) rows.push([i.invoice,i.invoiceDate,i.name,i.serviceTime,i.date,i.quantity,i.patient||'']);
     rows.push([]);
   };
-  const allAdmin=[...data.admin,...data.rz];
-  addSection('Admin Hours & Recovery Zone',allAdmin);
+  addSection('Admin Hours',data.admin);
+  addSection('Recovery Zone',data.rz);
   const cleaningDays=data.treatmentDays.size;
   if(cleaningDays>0){
     rows.push(['Cleaning']);
@@ -1370,84 +1480,71 @@ function downloadTherapistSummary(therapist){
   addSection('90min Sessions',data.sessions.r90);
   addSection('Massage Therapy',data.massage);
   addSection('Products',data.products||[]);
+  if(data.flags&&data.flags.length>0){
+    rows.push(['Flagged (cancellations / unknown — review manually)']);
+    rows.push(['Date','Line Item Name','Total incl. tax']);
+    for(const f of data.flags) rows.push([f.date,f.name,f.totalWithTax]);
+    rows.push([]);
+  }
+  return rows;
+}
+
+function downloadTherapistSummary(therapist){
+  const r=lastResults[therapist];
+  if(!r) return;
+  const data=lastTherapistData[therapist];
+  if(!data) return;
+  const rates=THERAPIST_RATES[therapist];
+  const wb=XLSX.utils.book_new();
+  const rows=buildTherapistDetailRows(therapist,data);
+  rows.push([]);
+  if(rates) rows.push(...buildTherapistSummaryRows(therapist,r,data,rates));
   const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[{wch:12},{wch:14},{wch:50},{wch:12},{wch:14},{wch:6},{wch:25}];
   XLSX.utils.book_append_sheet(wb,ws,'Summary');
   XLSX.writeFile(wb,`${therapist.replace(/\s+/g,'_')}_Summary_${periodStart}_to_${periodEnd}.xlsx`);
 }
 
-
-function downloadExcel(){
+// Full backup: one workbook covering everything calculated this run — an Overview tab
+// (same content as the bookkeeper Excel) plus one tab per therapist with every invoice
+// line item and that therapist's own summary block, so nothing needs to be reconstructed
+// from memory later if this session's data is ever needed again.
+function downloadFullBackup(){
   const wb=XLSX.utils.book_new();
-  const n=(v)=>isNaN(v)||v===undefined||v===null?0:parseFloat(v)||0;
-  const fmt=(v)=>'$'+n(v).toFixed(2);
-  const rows=[];
+  const overviewRows=[];
+  const usedNames=new Set();
 
   for(const[therapist,r]of Object.entries(lastResults)){
     const data=lastTherapistData[therapist];
     const rates=THERAPIST_RATES[therapist];
     if(!data||!rates) continue;
 
-    const uid=therapist.replace(/\s+/g,'_');
-    const notes=document.getElementById('notes-'+uid)?.value||'';
-    const avg=n(calcAvgWage(rates))||1;
+    overviewRows.push(...buildTherapistSummaryRows(therapist,r,data,rates));
+    overviewRows.push([]);
+    overviewRows.push([]);
 
-    const adminHrs=parseFloat(data.admin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+parseFloat((m/60).toFixed(2));},0).toFixed(2));
-    const cleanHrs=parseFloat((data.treatmentDays.size*15/60).toFixed(2));
-    const adminCleanHrs=parseFloat((adminHrs+cleanHrs).toFixed(2));
-    const adminCleanPay=n(r.adminPay)+n(r.cleaning);
-    const rzPay=n(r.rz);
+    const detailRows=buildTherapistDetailRows(therapist,data);
+    detailRows.push([]);
+    detailRows.push(...buildTherapistSummaryRows(therapist,r,data,rates));
+    const detailWs=XLSX.utils.aoa_to_sheet(detailRows);
+    detailWs['!cols']=[{wch:12},{wch:14},{wch:50},{wch:12},{wch:14},{wch:6},{wch:25}];
 
-    const chartTreat=data.chartingCount||0;
-    const chartHrs=parseFloat((chartTreat*10/60).toFixed(2));
-    const chartPay=n(r.charting);
+    let sheetName=therapist.replace(/[\\/*?:\[\]]/g,'').substring(0,31);
+    let finalName=sheetName;
+    let suffix=2;
+    while(usedNames.has(finalName)){ finalName=(sheetName.substring(0,28)+'_'+suffix).substring(0,31); suffix++; }
+    usedNames.add(finalName);
 
-    const r15Hrs=parseFloat((data.sessions.r15.length*30/60).toFixed(2));
-    const r15Pay=data.sessions.r15.reduce((s,i)=>s+i.amount,0);
-    const r45Hrs=parseFloat((data.sessions.r45.length*45/60).toFixed(2));
-    const r45Pay=data.sessions.r45.reduce((s,i)=>s+i.amount,0);
-    const r60Hrs=parseFloat((data.sessions.r60.length*60/60).toFixed(2));
-    const r60Pay=data.sessions.r60.reduce((s,i)=>s+i.amount,0);
-    const r90Hrs=parseFloat((data.sessions.r90.length*90/60).toFixed(2));
-    const r90Pay=data.sessions.r90.reduce((s,i)=>s+i.amount,0);
-    const massHrs=parseFloat(data.massage.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+parseFloat((m/60).toFixed(2));},0).toFixed(2));
-    const massPay=data.massage.reduce((s,i)=>s+i.amount,0);
-    const prodPay=n(r.products);
-    const salPay=n(r.salary);
-    const salHrs=salPay>0?parseFloat((salPay/avg).toFixed(2)):0;
-
-    rows.push([therapist]);
-    rows.push(['Component','Rate','Hours','Amount']);
-    rows.push(['Admin & Cleaning', fmt(rates.admin)+'/hr', adminCleanHrs+' hrs', fmt(adminCleanPay)]);
-    rows.push(['Charting', fmt(rates.admin)+'/hr', chartHrs+' hrs', fmt(chartPay)]);
-    rows.push(['15-30min Therapy', fmt(rates.r30/30*60)+'/hr', r15Hrs+' hrs', fmt(r15Pay)]);
-    rows.push(['45min Therapy', fmt(rates.r45/45*60)+'/hr', r45Hrs+' hrs', fmt(r45Pay)]);
-    rows.push(['60min Therapy', fmt(rates.r60/60*60)+'/hr', r60Hrs+' hrs', fmt(r60Pay)]);
-    rows.push(['90min Therapy', fmt(rates.r90/90*60)+'/hr', r90Hrs+' hrs', fmt(r90Pay)]);
-    if(rates.massage>0) rows.push(['Massage Therapy', fmt(rates.massage)+'/hr', massHrs+' hrs', fmt(massPay)]);
-    rows.push(['Products Commission', '', '', fmt(prodPay)]);
-    if(rzPay>0) rows.push(['Recovery Zone Commission', '', '', fmt(rzPay)]);
-    if(salPay>0) rows.push(['Salary', fmt(avg)+'/hr', salHrs+' hrs', fmt(salPay)]);
-    rows.push(['Subtotal earned', '', '', fmt(n(r.commission)+n(r.charting)+n(r.adminPay)+n(r.massage)+n(r.products)+n(r.rz)+n(r.cleaning)+n(r.salary))]);
-    rows.push([]);
-    rows.push(['Sick/Personal Pay', fmt(avg)+'/hr', n(r.sick)>0?parseFloat((n(r.sick)/avg).toFixed(2))+' hrs':'0.00 hrs', fmt(r.sick)]);
-    rows.push(['Holiday Pay', fmt(avg)+'/hr', n(r.holiday)>0?parseFloat((n(r.holiday)/avg).toFixed(2))+' hrs':'0.00 hrs', fmt(r.holiday)]);
-    rows.push(['Vacation Pay', fmt(avg)+'/hr', n(r.vacation)>0?parseFloat((n(r.vacation)/avg).toFixed(2))+' hrs':'0.00 hrs', fmt(r.vacation)]);
-    rows.push(['Gross Payroll', '', '', fmt(r.gross)]);
-    rows.push(['RRSP EE (6%)', '', '', fmt(r.rrspEE)]);
-    rows.push(['RRSP ER (3%)', '', '', fmt(r.rrspER)]);
-    rows.push(['Bonus (excl. RRSP)', '', '', fmt(r.bonus)]);
-    rows.push(['Total Payroll', '', '', fmt(r.total)]);
-    if(notes) rows.push(['Notes', notes]);
-    rows.push([]);
-    rows.push([]);
+    XLSX.utils.book_append_sheet(wb,detailWs,finalName);
   }
 
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:25},{wch:14},{wch:12},{wch:14}];
-  const sheetName=`${periodStart} to ${periodEnd}`.substring(0,31);
-  XLSX.utils.book_append_sheet(wb,ws,sheetName);
-  XLSX.writeFile(wb,`Payroll_${periodStart}_to_${periodEnd}.xlsx`);
+  const overviewWs=XLSX.utils.aoa_to_sheet(overviewRows);
+  overviewWs['!cols']=[{wch:25},{wch:14},{wch:12},{wch:14}];
+  // Insert Overview as the first sheet
+  XLSX.utils.book_append_sheet(wb,overviewWs,'Overview');
+  wb.SheetNames.unshift(wb.SheetNames.pop());
+
+  XLSX.writeFile(wb,`Payroll_Full_Backup_${periodStart}_to_${periodEnd}.xlsx`);
 }
 </script>
 </body>
