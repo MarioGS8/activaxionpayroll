@@ -203,7 +203,7 @@ function toggleAllTherapists(show){
 }
 function calcAvgWage(r){
   const baseRates=[r.r15/15*60,r.r30/30*60,r.r45/45*60,r.r60/60*60,r.r90/90*60,
-    r.admin||0,(r.rz15||6)/15*60,(r.rz30||12)/30*60];
+    r.admin??0,(r.rz15??6)/15*60,(r.rz30??12)/30*60];
   const sum=baseRates.reduce((a,b)=>a+b,0);
   if(r.massage>0){
     return (sum+(r.massage))/9;
@@ -222,8 +222,8 @@ function makeRow(name,r){
     <td><input type="number" value="${r.r90}" step="0.01" min="0"></td>
     <td><input type="number" value="${r.massage}" step="0.01" min="0"></td>
     <td><input type="number" value="${r.admin}" step="0.01" min="0"></td>
-    <td><input type="number" value="${r.rz15||6}" step="0.01" min="0"></td>
-    <td><input type="number" value="${r.rz30||12}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.rz15??6}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.rz30??12}" step="0.01" min="0"></td>
     <td><input type="number" value="${r.salary}" step="0.01" min="0"></td>
     <td><button class="del-btn" onclick="this.closest('tr').remove()">×</button></td>`;
   return tr;
@@ -265,9 +265,13 @@ function parseCSV(text){
     const line=lines[i]; if(!line.trim()) continue;
     const vals=[]; let inQ=false,cur='';
     for(let c=0;c<line.length;c++){
-      if(line[c]==='"'){inQ=!inQ;}
-      else if(line[c]===','&&!inQ){vals.push(cur);cur='';}
-      else{cur+=line[c];}
+      const ch=line[c];
+      if(ch==='"'){
+        if(inQ&&line[c+1]==='"'){cur+='"';c++;}
+        else{inQ=!inQ;}
+      }
+      else if(ch===','&&!inQ){vals.push(cur);cur='';}
+      else{cur+=ch;}
     }
     vals.push(cur);
     const row={};
@@ -307,8 +311,8 @@ function classifyAndEarn(cat,name,subtotal,rates,productCat,serviceTime){
   if(productCat) return {commission:subtotal*0.10,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Product (10%)'};
   if(isProduct(cat,name)) return {commission:subtotal*0.10,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Product (10%)'};
   if(isRecoveryZone(cat)){
-    if(isRLT(name)) return {commission:0,charting:0,admin:0,massage:0,rz:rates.rz15||6,isTreat:false,label:'RZ 15min'};
-    return {commission:0,charting:0,admin:0,massage:0,rz:rates.rz30||12,isTreat:false,label:'RZ 30min+'};
+    if(isRLT(name)) return {commission:0,charting:0,admin:0,massage:0,rz:rates.rz15??6,isTreat:false,label:'RZ 15min'};
+    return {commission:0,charting:0,admin:0,massage:0,rz:rates.rz30??12,isTreat:false,label:'RZ 30min+'};
   }
   if(isAdminHours(cat,name)){
     if(/sick|personal day|vacation/i.test(name)){
@@ -326,6 +330,7 @@ function classifyAndEarn(cat,name,subtotal,rates,productCat,serviceTime){
     if(rawMins===45) rawMins=30;
     else if(rawMins===75) rawMins=60;
     else if(rawMins===105) rawMins=90;
+    else rawMins=Math.max(0,rawMins-15); // fallback: any other booked length still has 15min downtime baked in
     const massHrs=parseFloat((rawMins/60).toFixed(2));
     return {commission:0,charting:0,admin:0,massage:parseFloat((massHrs*rates.massage).toFixed(2)),rz:0,isTreat:true,label:`Massage ${rawMins}min`,massageMins:rawMins};
   }
@@ -602,7 +607,6 @@ function calculate(){
       {val:'product',label:'Products'},
       {val:'delete',label:'🗑 Delete this line'},
     ];
-    // Store items globally by invoice# for safe retrieval in moveRow
     if(!itemStore[therapist]) itemStore[therapist]={};
     const makeRows=(items,currentSection)=>items.map((i)=>{
       itemStore[therapist][i.invoice]=i;
@@ -882,7 +886,6 @@ function recalcTotals(uid, therapist){
   const vacation=parseFloat(document.getElementById('vacation-'+uid)?.value)||0;
   const bonus=parseFloat(document.getElementById('bonus-'+uid)?.value)||0;
   r.sick=sick; r.holiday=holiday; r.vacation=vacation; r.bonus=bonus;
-  // Sum cancellation commissions
   let cancTotal=0;
   const flagCount=r.flagCount||0;
   for(let i=0;i<flagCount;i++){
@@ -898,16 +901,13 @@ function recalcTotals(uid, therapist){
   const rrspER=gross*0.03;
   const total=gross+rrspER;
   const fmt=v=>'$'+v.toFixed(2);
-  // gross header removed
   document.getElementById('gross-row-'+uid).textContent=fmt(gross);
   document.getElementById('rrsp-ee-'+uid).textContent=fmt(rrspEE);
   document.getElementById('rrsp-er-'+uid).textContent=fmt(rrspER);
   document.getElementById('total-'+uid).textContent=fmt(total);
   r.gross=gross; r.rrspEE=rrspEE; r.rrspER=rrspER; r.total=total;
-  // Update subtotal earned
   const subtotalEl=document.getElementById('subtotal-earned-'+uid);
   if(subtotalEl) subtotalEl.textContent=fmt(r.commission+(r.cancellation||0)+r.charting+r.adminPay+r.massage+(r.products||0)+r.cleaning+r.salary);
-  // Update hours for manual entries
   const rates=THERAPIST_RATES[therapist];
   if(rates){
     const avg=calcAvgWage(rates)||1;
@@ -920,8 +920,6 @@ function recalcTotals(uid, therapist){
   }
 }
 
-
-
 function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
   const item = (itemStore[therapist]||{})[invoiceNum];
   if(!item){ console.error('Item not found:',invoiceNum); return; }
@@ -930,10 +928,6 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
   const data = lastTherapistData[therapist];
   if(!data) return;
 
-  // Remove from source. 'product' is handled explicitly here (and below on the target
-  // side) — previously it fell into the generic sessions branch, which tried
-  // data.sessions['product'] (undefined) and would throw, silently breaking every
-  // move involving a Product row in either direction.
   if(fromSection==='admin'||fromSection==='rz15'||fromSection==='rz30'){
     data.admin = data.admin.filter(i=>i.invoice!==item.invoice);
     data.rz = data.rz.filter(i=>i.invoice!==item.invoice);
@@ -951,17 +945,16 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
     return;
   }
 
-  // Recalculate item amount for new section
   const rates = THERAPIST_RATES[therapist];
   if(targetSection==='admin'){
     const mins = parseDuration(item.name)||60;
     item.amount = rates.admin*(mins/60);
     data.admin.push(item);
   } else if(targetSection==='rz15'){
-    item.amount = rates.rz15||6;
+    item.amount = rates.rz15??6;
     data.rz.push(item);
   } else if(targetSection==='rz30'){
-    item.amount = rates.rz30||12;
+    item.amount = rates.rz30??12;
     data.rz.push(item);
   } else if(targetSection==='massage'){
     const mins = parseDuration(item.name)||60;
@@ -978,7 +971,6 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
     data.sessions[targetSection].push(item);
   }
 
-  // Sort moved section
   const sortByDate=(items)=>[...items].sort((a,b)=>a.date.localeCompare(b.date));
   if(targetSection==='admin'){ data.admin=sortByDate(data.admin); }
   else if(targetSection==='rz15'||targetSection==='rz30'){ data.rz=sortByDate(data.rz); }
@@ -989,14 +981,6 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
   refreshBreakdownTable(therapist, uid);
 }
 
-// Rebuilds a therapist's breakdown table from the current state of lastTherapistData,
-// and recomputes every derived total (cleaning, charting, adminPay, rz, massage,
-// commission, products) fresh from the underlying line items rather than patching
-// them incrementally in multiple places. This is what moveRow() used to do inline,
-// pulled out so submitManualEntry() can reuse the exact same rendering + totals logic
-// instead of duplicating ~150 lines. It also fixes a pre-existing bug where moveRow()
-// folded Recovery Zone earnings into adminPay AND left them in rz, double-counting RZ
-// pay in the gross total any time a row was moved via the "Move to" dropdown.
 function refreshBreakdownTable(therapist, uid){
   const data = lastTherapistData[therapist];
   const rates = THERAPIST_RATES[therapist];
@@ -1022,7 +1006,6 @@ function refreshBreakdownTable(therapist, uid){
   r.adminPay=totalAdmin; r.rz=totalRz; r.massage=totalMassage;
   r.commission=totalCommission; r.products=totalProducts;
 
-  // Save manual payroll inputs before any re-render (they live inside the tbody we're about to replace)
   const savedSick    = parseFloat(document.getElementById('sick-'+uid)?.value)||0;
   const savedHoliday = parseFloat(document.getElementById('holiday-'+uid)?.value)||0;
   const savedVacation= parseFloat(document.getElementById('vacation-'+uid)?.value)||0;
@@ -1218,11 +1201,6 @@ function updateManualValueLabel(uid){
   }
 }
 
-// Adds a manually-entered line (e.g. a session the therapist forgot to invoice in
-// Noterro) directly into the same data structures the CSV import populates, tagged
-// with a MANUAL-N invoice id instead of a real invoice number, then reuses
-// refreshBreakdownTable() so it's rendered and totalled exactly like an imported row —
-// including being movable afterward via its own "Move to" dropdown.
 function submitManualEntry(therapist, uid){
   const data = lastTherapistData[therapist];
   const rates = THERAPIST_RATES[therapist];
@@ -1268,11 +1246,11 @@ function submitManualEntry(therapist, uid){
     data.treatmentDays.add(dateVal);
   } else if(section==='rz15'){
     base.serviceCategory='Recovery Zone'; base.serviceTime='15'; base.subtotal='';
-    base.amount = rates.rz15||6;
+    base.amount = rates.rz15??6;
     data.rz.push(base);
   } else if(section==='rz30'){
     base.serviceCategory='Recovery Zone'; base.serviceTime='30'; base.subtotal='';
-    base.amount = rates.rz30||12;
+    base.amount = rates.rz30??12;
     data.rz.push(base);
   } else if(section==='product'){
     base.serviceCategory=''; base.subtotal=String(rawVal); base.serviceTime='';
@@ -1291,7 +1269,6 @@ function submitManualEntry(therapist, uid){
     return;
   }
 
-  // Override takes priority over the rate-table computation above if the user typed one in.
   const overrideVal = parseFloat(document.getElementById('manual-override-'+uid)?.value);
   if(!isNaN(overrideVal) && overrideVal>=0){
     base.amount = parseFloat(overrideVal.toFixed(2));
@@ -1311,8 +1288,6 @@ function submitManualEntry(therapist, uid){
   updateManualValueLabel(uid);
   toggleManualEntry(uid);
 }
-
-
 
 function copyTherapistSummary(therapist, uid){
   const data=lastTherapistData[therapist];
@@ -1359,7 +1334,6 @@ function copyTherapistSummary(therapist, uid){
     if(btn){ btn.textContent='✓ Copied!'; btn.style.background='#3b6d11'; setTimeout(()=>{ btn.textContent='📋 Copy summary text'; btn.style.background='#0f6e56'; },2500); }
   });
 }
-
 
 function buildTherapistSummaryRows(therapist,r,data,rates){
   const n=(v)=>isNaN(v)||v===undefined||v===null?0:parseFloat(v)||0;
@@ -1437,8 +1411,6 @@ function downloadExcel(){
   XLSX.writeFile(wb,`Payroll_${periodStart}_to_${periodEnd}.xlsx`);
 }
 
-// Builds the full-detail line-item rows for one therapist (every invoice line, every
-// section), reusing the same section layout as the per-therapist download.
 function buildTherapistDetailRows(therapist,data){
   const rows=[
     [`${therapist} — Full Detail ${periodStart} to ${periodEnd}`],
@@ -1497,10 +1469,6 @@ function downloadTherapistSummary(therapist){
   XLSX.writeFile(wb,`${therapist.replace(/\s+/g,'_')}_Summary_${periodStart}_to_${periodEnd}.xlsx`);
 }
 
-// Full backup: one workbook covering everything calculated this run — an Overview tab
-// (same content as the bookkeeper Excel) plus one tab per therapist with every invoice
-// line item and that therapist's own summary block, so nothing needs to be reconstructed
-// from memory later if this session's data is ever needed again.
 function downloadFullBackup(){
   const wb=XLSX.utils.book_new();
   const overviewRows=[];
@@ -1532,7 +1500,6 @@ function downloadFullBackup(){
 
   const overviewWs=XLSX.utils.aoa_to_sheet(overviewRows);
   overviewWs['!cols']=[{wch:25},{wch:14},{wch:12},{wch:14}];
-  // Insert Overview as the first sheet
   XLSX.utils.book_append_sheet(wb,overviewWs,'Overview');
   wb.SheetNames.unshift(wb.SheetNames.pop());
 
