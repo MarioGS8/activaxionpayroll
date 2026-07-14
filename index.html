@@ -753,7 +753,7 @@ function calculate(){
             <tr class="section-header"><td colspan="2">RRSP</td></tr>
             <tr class="rrsp-row"><td>RRSP EE (6%)</td><td id="rrsp-ee-${uid}">$0.00</td></tr>
             <tr class="rrsp-row"><td>RRSP ER (3%)</td><td id="rrsp-er-${uid}">$0.00</td></tr>
-            <tr class="section-header"><td colspan="2">Bonus (excluded from RRSP)</td></tr>
+            <tr class="section-header"><td colspan="2">Bonus (included in RRSP base)</td></tr>
             <tr class="bonus-row"><td>Bonus</td><td><input type="number" class="manual-input" min="0" step="0.01" value="0" id="bonus-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="background:#faeeda"></td></tr>
             <tr class="grand-total-row"><td>Total Payroll</td><td id="total-${uid}">$0.00</td></tr>
           </tbody>
@@ -893,10 +893,10 @@ function recalcTotals(uid, therapist){
     if(valEl) valEl.textContent='$'+val.toFixed(2);
   }
   r.cancellation=cancTotal;
-  const gross=r.commission+r.charting+r.adminPay+r.massage+r.rz+(r.products||0)+r.cleaning+r.salary+sick+holiday+vacation+cancTotal;
+  const gross=r.commission+r.charting+r.adminPay+r.massage+r.rz+(r.products||0)+r.cleaning+r.salary+sick+holiday+vacation+cancTotal+bonus;
   const rrspEE=gross*0.06;
   const rrspER=gross*0.03;
-  const total=gross+bonus+rrspER;
+  const total=gross+rrspER;
   const fmt=v=>'$'+v.toFixed(2);
   // gross header removed
   document.getElementById('gross-row-'+uid).textContent=fmt(gross);
@@ -1179,7 +1179,7 @@ function refreshBreakdownTable(therapist, uid){
         <tr class="section-header"><td colspan="15">RRSP</td></tr>
         <tr class="rrsp-row"><td>RRSP EE (6%)</td><td id="rrsp-ee-${uid}">$0.00</td></tr>
         <tr class="rrsp-row"><td>RRSP ER (3%)</td><td id="rrsp-er-${uid}">$0.00</td></tr>
-        <tr class="section-header"><td colspan="15">Bonus (excluded from RRSP)</td></tr>
+        <tr class="section-header"><td colspan="15">Bonus (included in RRSP base)</td></tr>
         <tr class="bonus-row"><td>Bonus</td><td><input type="number" class="manual-input" min="0" step="0.01" value="${savedBonus}" id="bonus-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="background:#faeeda"></td></tr>
         <tr class="grand-total-row"><td>Total Payroll</td><td id="total-${uid}">$0.00</td></tr>`;
 
@@ -1411,7 +1411,7 @@ function buildTherapistSummaryRows(therapist,r,data,rates){
   rows.push(['Gross Payroll', '', '', fmt(r.gross)]);
   rows.push(['RRSP EE (6%)', '', '', fmt(r.rrspEE)]);
   rows.push(['RRSP ER (3%)', '', '', fmt(r.rrspER)]);
-  rows.push(['Bonus (excl. RRSP)', '', '', fmt(r.bonus)]);
+  rows.push(['Bonus (incl. in RRSP base)', '', '', fmt(r.bonus)]);
   rows.push(['Total Payroll', '', '', fmt(r.total)]);
   if(notes) rows.push(['Notes', notes]);
   return rows;
