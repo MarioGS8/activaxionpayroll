@@ -531,7 +531,7 @@ function calculate(){
     else if(earn.massage>0){ rawEntry.amount=earn.massage; rawEntry.massageMins=earn.massageMins; d.massage.push(rawEntry); }
     else if(earn.commission>0){
       rawEntry.amount=earn.commission;
-      const mins=parseDuration(name)||60;
+      const mins=serviceTimeVal||parseDuration(name)||60;
       rawEntry.mins=mins;
       if(mins<=30) d.sessions.r15.push(rawEntry);
       else if(mins<=45) d.sessions.r45.push(rawEntry);
