@@ -692,8 +692,10 @@ function calculate(){
             })()}
             <tr style="background:#1a1a18"><td colspan="14" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#fff;letter-spacing:0.02em">${therapist} — Summary</td></tr>
             ${(()=>{
-              const adminCleanHrs=(data.admin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(data.treatmentDays.size*15/60)).toFixed(2);
-              const adminCleanPay=(sumItems(data.admin)+cleaning).toFixed(2);
+              const adminHrsOnly=(data.admin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)).toFixed(2);
+              const adminPayOnly=sumItems(data.admin).toFixed(2);
+              const cleaningHrsOnly=(data.treatmentDays.size*15/60).toFixed(2);
+              const cleaningPayOnly=cleaning.toFixed(2);
               const chartHrs=(Object.values(data.sessions).flat().length*10/60).toFixed(2);
               const chartPay=totalCharting.toFixed(2);
               const r15Hrs=(data.sessions.r15.reduce((s,i)=>s+(i.mins||30)/60,0)).toFixed(2);
@@ -713,7 +715,8 @@ function calculate(){
                 <td colspan="2" style="font-size:12px;text-align:right;font-weight:500">$${pay}</td>
               </tr>`;
               let rows='';
-              rows+=summaryRow('Admin & Cleaning',(rates.admin).toFixed(2),adminCleanHrs,adminCleanPay);
+              rows+=summaryRow('Admin',(rates.admin).toFixed(2),adminHrsOnly,adminPayOnly);
+              rows+=summaryRow('Cleaning',(rates.admin).toFixed(2),cleaningHrsOnly,cleaningPayOnly);
               rows+=summaryRow('Charting',(rates.admin).toFixed(2),chartHrs,chartPay);
               rows+=summaryRow('15-30min Therapy',(rates.r30/30*60).toFixed(2),r15Hrs,r15Pay);
               rows+=summaryRow('45min Therapy',(rates.r45/45*60).toFixed(2),r45Hrs,r45Pay);
@@ -1112,8 +1115,10 @@ function refreshBreakdownTable(therapist, uid){
       }
       html+=`<tr style="background:#1a1a18"><td colspan="14" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#fff;letter-spacing:0.02em">${therapist} — Summary</td></tr>`;
       html+=(()=>{
-        const adminCleanHrs=(data.admin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(cleaningDays*15/60)).toFixed(2);
-        const adminCleanPay=(sumItems(data.admin)+cleaning).toFixed(2);
+        const adminHrsOnly=(data.admin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)).toFixed(2);
+        const adminPayOnly=sumItems(data.admin).toFixed(2);
+        const cleaningHrsOnly=(cleaningDays*15/60).toFixed(2);
+        const cleaningPayOnly=cleaning.toFixed(2);
         const chartHrs=(Object.values(data.sessions).flat().length*10/60).toFixed(2);
         const chartPay=totalCharting.toFixed(2);
         const r15Hrs=(data.sessions.r15.reduce((s,i)=>s+(i.mins||30)/60,0)).toFixed(2);
@@ -1133,7 +1138,8 @@ function refreshBreakdownTable(therapist, uid){
           <td colspan="2" style="font-size:12px;text-align:right;font-weight:500">$${pay}</td>
         </tr>`;
         let sRows='';
-        sRows+=summaryRow('Admin & Cleaning',(rates.admin).toFixed(2),adminCleanHrs,adminCleanPay);
+        sRows+=summaryRow('Admin',(rates.admin).toFixed(2),adminHrsOnly,adminPayOnly);
+        sRows+=summaryRow('Cleaning',(rates.admin).toFixed(2),cleaningHrsOnly,cleaningPayOnly);
         sRows+=summaryRow('Charting',(rates.admin).toFixed(2),chartHrs,chartPay);
         sRows+=summaryRow('15-30min Therapy',(rates.r30/30*60).toFixed(2),r15Hrs,r15Pay);
         sRows+=summaryRow('45min Therapy',(rates.r45/45*60).toFixed(2),r45Hrs,r45Pay);
@@ -1311,8 +1317,8 @@ function copyTherapistSummary(therapist, uid){
     body+='\n';
   };
 
-  const allAdmin=[...data.admin,...data.rz];
-  addSection('Admin Hours & Recovery Zone', allAdmin);
+  addSection('Admin Hours', data.admin);
+  addSection('Recovery Zone', data.rz);
   addSection('15-30min Therapy', data.sessions.r15);
   addSection('45min Therapy', data.sessions.r45);
   addSection('60min Therapy', data.sessions.r60);
