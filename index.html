@@ -369,6 +369,7 @@ function makeMassageRows(items,uid,therapist,rates){
     {val:'delete',label:'🗑 Delete this line'},
   ];
   return items.map(i=>{
+    itemStore[therapist][i.invoice]=i;
     const hasBalance=parseFloat(i.balance||0)>0;
     const rs=hasBalance?'style="background:#fff0f0"':'';
     const corrected=i.massageMins||correctMassageMins(parseFloat(i.serviceTime)||60)||60;
@@ -503,7 +504,12 @@ function calculate(){
     }
     if(earn.label==='Skip') continue;
     const totalWithTax=parseFloat(row['Total'])||0;
-    if(earn.flag){ therapistData[practitioner].flags.push({date:rawDate,name,totalWithTax}); continue; }
+    if(earn.flag){
+      const flagInvoice=(row['Invoice #']||'').trim();
+      const flagPatient=(row['Patient Name']||'').trim();
+      therapistData[practitioner].flags.push({date:rawDate,name,totalWithTax,invoice:flagInvoice,patient:flagPatient});
+      continue;
+    }
     const d=therapistData[practitioner];
     const patientName=(row['Patient Name']||'').trim();
     const invoiceDate=(row['Invoice Date']||'').split(' ')[0];
@@ -770,7 +776,7 @@ function calculate(){
         <div style="margin-top:1rem;padding:12px;background:#faeeda;border-radius:8px;">
           <p style="font-size:12px;color:#854f0b;font-weight:500;margin-bottom:8px">⚠ Select service type for each cancellation fee:</p>
           <table class="breakdown-table">
-            <thead><tr><th>Date</th><th>Total incl. tax</th><th>Service type</th><th style="text-align:right">Commission</th></tr></thead>
+            <thead><tr><th>Invoice #</th><th>Date</th><th>Patient</th><th>Total incl. tax</th><th>Service type</th><th style="text-align:right">Commission</th></tr></thead>
             <tbody>
               ${data.flags.map((f,idx)=>{
                 const opts=[
@@ -779,7 +785,9 @@ function calculate(){
                   ...(rates.massage>0?[30,45,60,90].map(m=>`<option value="${(rates.massage*m/60).toFixed(2)}">Massage ${m}min ($${(rates.massage*m/60).toFixed(2)})</option>`):[])
                 ].join('');
                 return `<tr>
+                  <td style="font-size:12px;white-space:nowrap">${f.invoice||''}</td>
                   <td style="white-space:nowrap">${f.date}</td>
+                  <td style="font-size:12px">${f.patient||''}</td>
                   <td style="color:#ba7517">$${f.totalWithTax.toFixed(2)}</td>
                   <td><select class="canc-select" id="canc-${uid}-${idx}" onchange="recalcTotals('${uid}','${therapist}')">${opts}</select></td>
                   <td id="canc-val-${uid}-${idx}" style="color:#ba7517;text-align:right">$0.00</td>
@@ -1452,8 +1460,8 @@ function buildTherapistDetailRows(therapist,data){
   addSection('Products',data.products||[]);
   if(data.flags&&data.flags.length>0){
     rows.push(['Flagged (cancellations / unknown — review manually)']);
-    rows.push(['Date','Line Item Name','Total incl. tax']);
-    for(const f of data.flags) rows.push([f.date,f.name,f.totalWithTax]);
+    rows.push(['Invoice #','Date','Patient Name','Line Item Name','Total incl. tax']);
+    for(const f of data.flags) rows.push([f.invoice||'',f.date,f.patient||'',f.name,f.totalWithTax]);
     rows.push([]);
   }
   return rows;
