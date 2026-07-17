@@ -692,7 +692,7 @@ function calculate(){
             })()}
             <tr style="background:#1a1a18"><td colspan="14" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#fff;letter-spacing:0.02em">${therapist} — Summary</td></tr>
             ${(()=>{
-              const adminHrsOnly=(data.admin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)).toFixed(2);
+              const adminHrsOnly=(data.admin.reduce((s,i)=>{const m=parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0)).toFixed(2);
               const adminPayOnly=sumItems(data.admin).toFixed(2);
               const cleaningHrsOnly=(data.treatmentDays.size*15/60).toFixed(2);
               const cleaningPayOnly=cleaning.toFixed(2);
@@ -704,7 +704,7 @@ function calculate(){
               const r45Pay=sumItems(data.sessions.r45).toFixed(2);
               const r60r90Hrs=(data.sessions.r60.reduce((s,i)=>s+(i.mins||60)/60,0)+data.sessions.r90.reduce((s,i)=>s+(i.mins||90)/60,0)).toFixed(2);
               const r60r90Pay=(sumItems(data.sessions.r60)+sumItems(data.sessions.r90)).toFixed(2);
-              const massHrs=data.massage.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0).toFixed(2);
+              const massHrs=data.massage.reduce((s,i)=>{const m=i.massageMins||parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0).toFixed(2);
               const massPay=sumItems(data.massage).toFixed(2);
               const prodPay=(data.products||[]).reduce((s,i)=>s+i.amount,0).toFixed(2);
               const salPay=salary.toFixed(2);
@@ -733,7 +733,7 @@ function calculate(){
                 (Object.values(data.sessions).flat().length*10/60) +
                 (data.sessions.r15.reduce((s,i)=>s+(i.mins||30)/60,0))+(data.sessions.r45.length*45/60)+
                 (data.sessions.r60.reduce((s,i)=>s+(i.mins||60)/60,0))+(data.sessions.r90.reduce((s,i)=>s+(i.mins||90)/60,0))+
-                data.massage.reduce((s,i)=>{const m=i.massageMins||parseDuration(i.name)||60;return s+m/60;},0)
+                data.massage.reduce((s,i)=>{const m=i.massageMins||parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0)
               ).toFixed(2)} hrs total</td>
               <td colspan="2" style="font-size:13px;font-weight:600;text-align:right;padding:8px 0;color:#0f6e56" id="subtotal-earned-${uid}">$0.00</td>
             </tr>
@@ -950,7 +950,7 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
 
   const rates = THERAPIST_RATES[therapist];
   if(targetSection==='admin'){
-    const mins = parseDuration(item.name)||60;
+    const mins = parseFloat(item.serviceTime)||parseDuration(item.name)||60;
     item.amount = rates.admin*(mins/60);
     data.admin.push(item);
   } else if(targetSection==='rz15'){
@@ -960,7 +960,7 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
     item.amount = rates.rz30??12;
     data.rz.push(item);
   } else if(targetSection==='massage'){
-    const mins = parseDuration(item.name)||60;
+    const mins = parseFloat(item.serviceTime)||parseDuration(item.name)||60;
     item.amount = rates.massage*(mins/60);
     data.massage.push(item);
   } else if(targetSection==='product'){
@@ -1073,7 +1073,7 @@ function refreshBreakdownTable(therapist, uid){
       }
       html+=sectionHeader(`Cleaning · ${cleaningDays} days worked`);
       html+=`<tr><td style="padding-left:8px">15min admin × ${cleaningDays} days</td><td>$${cleaning.toFixed(2)}</td></tr>`;
-      html+=`<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Admin & Cleaning Total: ${(data.admin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)+(cleaningDays*15/60)).toFixed(2)} hrs</td><td colspan="2" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">${rates.admin.toFixed(2)}/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$${(sumItems(data.admin)+cleaning).toFixed(2)}</td></tr>`;
+      html+=`<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Admin & Cleaning Total: ${(data.admin.reduce((s,i)=>{const m=parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0)+(cleaningDays*15/60)).toFixed(2)} hrs</td><td colspan="2" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">${rates.admin.toFixed(2)}/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$${(sumItems(data.admin)+cleaning).toFixed(2)}</td></tr>`;
       if(totalCharting>0){
         const treatCount=Object.values(data.sessions).flat().length;
         html+=sectionHeader(`Charting · ${treatCount} treatments`);
@@ -1115,7 +1115,7 @@ function refreshBreakdownTable(therapist, uid){
       }
       html+=`<tr style="background:#1a1a18"><td colspan="14" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#fff;letter-spacing:0.02em">${therapist} — Summary</td></tr>`;
       html+=(()=>{
-        const adminHrsOnly=(data.admin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0)).toFixed(2);
+        const adminHrsOnly=(data.admin.reduce((s,i)=>{const m=parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0)).toFixed(2);
         const adminPayOnly=sumItems(data.admin).toFixed(2);
         const cleaningHrsOnly=(cleaningDays*15/60).toFixed(2);
         const cleaningPayOnly=cleaning.toFixed(2);
@@ -1127,7 +1127,7 @@ function refreshBreakdownTable(therapist, uid){
         const r45Pay=sumItems(data.sessions.r45).toFixed(2);
         const r60r90Hrs=(data.sessions.r60.reduce((s,i)=>s+(i.mins||60)/60,0)+data.sessions.r90.reduce((s,i)=>s+(i.mins||90)/60,0)).toFixed(2);
         const r60r90Pay=(sumItems(data.sessions.r60)+sumItems(data.sessions.r90)).toFixed(2);
-        const massHrs=data.massage.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+m/60;},0).toFixed(2);
+        const massHrs=data.massage.reduce((s,i)=>{const m=i.massageMins||parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0).toFixed(2);
         const massPay=sumItems(data.massage).toFixed(2);
         const prodPay2=sumItems(data.products||[]).toFixed(2);
         const salPay=salary.toFixed(2);
@@ -1156,7 +1156,7 @@ function refreshBreakdownTable(therapist, uid){
           (Object.values(data.sessions).flat().length*10/60) +
           (data.sessions.r15.reduce((s,i)=>s+(i.mins||30)/60,0))+(data.sessions.r45.length*45/60)+
           (data.sessions.r60.reduce((s,i)=>s+(i.mins||60)/60,0))+(data.sessions.r90.reduce((s,i)=>s+(i.mins||90)/60,0))+
-          data.massage.reduce((s,i)=>{const m=i.massageMins||parseDuration(i.name)||60;return s+m/60;},0)
+          data.massage.reduce((s,i)=>{const m=i.massageMins||parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0)
         ).toFixed(2)} hrs total</td>
         <td colspan="2" style="font-size:13px;font-weight:600;text-align:right;padding:8px 0;color:#0f6e56" id="subtotal-earned-${uid}">$0.00</td>
       </tr>`;
@@ -1348,7 +1348,7 @@ function buildTherapistSummaryRows(therapist,r,data,rates){
   const notes=document.getElementById('notes-'+uid)?.value||'';
   const avg=n(calcAvgWage(rates))||1;
 
-  const adminHrs=parseFloat(data.admin.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+parseFloat((m/60).toFixed(2));},0).toFixed(2));
+  const adminHrs=parseFloat(data.admin.reduce((s,i)=>{const m=parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+parseFloat((m/60).toFixed(2));},0).toFixed(2));
   const cleanHrs=parseFloat((data.treatmentDays.size*15/60).toFixed(2));
   const adminCleanHrs=parseFloat((adminHrs+cleanHrs).toFixed(2));
   const adminCleanPay=n(r.adminPay)+n(r.cleaning);
@@ -1364,7 +1364,7 @@ function buildTherapistSummaryRows(therapist,r,data,rates){
   const r45Pay=data.sessions.r45.reduce((s,i)=>s+i.amount,0);
   const r60r90Hrs=parseFloat((data.sessions.r60.reduce((s,i)=>s+(i.mins||60)/60,0)+data.sessions.r90.reduce((s,i)=>s+(i.mins||90)/60,0)).toFixed(2));
   const r60r90Pay=data.sessions.r60.reduce((s,i)=>s+i.amount,0)+data.sessions.r90.reduce((s,i)=>s+i.amount,0);
-  const massHrs=parseFloat(data.massage.reduce((s,i)=>{const m=parseDuration(i.name)||60;return s+parseFloat((m/60).toFixed(2));},0).toFixed(2));
+  const massHrs=parseFloat(data.massage.reduce((s,i)=>{const m=i.massageMins||parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+parseFloat((m/60).toFixed(2));},0).toFixed(2));
   const massPay=data.massage.reduce((s,i)=>s+i.amount,0);
   const prodPay=n(r.products);
   const salPay=n(r.salary);
