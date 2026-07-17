@@ -355,7 +355,14 @@ function makeMassageHeader(){
   const hdrs=['Invoice #','Invoice Date','Service Category','Line Item Name','Service Time','Duration','Service Date','Qty','Practitioner','Discount Name','Disc Amt','Subtotal','Tax','Total','Balance','Patient Name','Move to'];
   return '<tr style="border-bottom:0.5px solid rgba(0,0,0,0.15)">'+hdrs.map(h=>'<th style="font-size:11px;color:#5f5e5a;font-weight:500;padding:4px 8px 6px 0;white-space:nowrap">'+h+'</th>').join('')+'</tr>';
 }
-function makeMassageRows(items,uid,therapist,rates){
+// Shared by Admin and Massage rows in BOTH the initial and refresh renders (same function,
+// same call signature, everywhere) - specifically to avoid the class of bug where two
+// separate copies of "the same" row renderer silently drift apart (one gets an edit box,
+// the other doesn't). sectionType is 'admin' or 'massage': both are priced as a continuous
+// rate x (minutes/60), so both get an editable duration box - unlike flat-fee items (RZ)
+// or flat-per-session-bucket items (15/30/45/60/90min treatments), which don't need one
+// since "Move to" already handles reclassifying those correctly.
+function makeEditableDurationRows(items,uid,therapist,rate,sectionType){
   const cs='style="color:#5f5e5a;font-size:11px;white-space:nowrap;padding:4px 8px 4px 0"';
   const SECTION_OPTIONS=[
     {val:'admin',label:'Admin Hours'},
@@ -365,14 +372,19 @@ function makeMassageRows(items,uid,therapist,rates){
     {val:'r45',label:'45min Sessions'},
     {val:'r60',label:'60min Sessions'},
     {val:'r90',label:'90min Sessions'},
+    {val:'massage',label:'Massage Therapy'},
     {val:'product',label:'Products'},
     {val:'delete',label:'🗑 Delete this line'},
-  ];
+  ].filter(o=>o.val!==sectionType);
+  const updateFnName = sectionType==='massage' ? 'updateMassageDuration' : 'updateAdminDuration';
   return items.map(i=>{
+    if(!itemStore[therapist]) itemStore[therapist]={};
     itemStore[therapist][i.invoice]=i;
     const hasBalance=parseFloat(i.balance||0)>0;
     const rs=hasBalance?'style="background:#fff0f0"':'';
-    const corrected=i.massageMins||correctMassageMins(parseFloat(i.serviceTime)||60)||60;
+    const corrected = sectionType==='massage'
+      ? (i.massageMins||correctMassageMins(parseFloat(i.serviceTime)||60)||60)
+      : (parseFloat(i.serviceTime)||parseDuration(i.name)||60);
     const opts=SECTION_OPTIONS.map(o=>'<option value="'+o.val+'">'+o.label+'</option>').join('');
     return '<tr '+rs+'>'
       +'<td '+cs+'>'+i.invoice+'</td>'
@@ -380,7 +392,7 @@ function makeMassageRows(items,uid,therapist,rates){
       +'<td '+cs+'>'+(i.serviceCategory||'')+'</td>'
       +'<td style="color:#5f5e5a;font-size:11px;padding:4px 8px 4px 0;min-width:220px">'+i.name+'</td>'
       +'<td '+cs+'>'+i.serviceTime+'</td>'
-      +'<td style="padding:4px 4px 4px 0"><input type="number" min="5" step="5" value="'+corrected+'" style="width:55px;padding:3px 5px;border:0.5px solid rgba(0,0,0,0.25);border-radius:5px;font-size:11px;background:#fffde7" onchange="updateMassageDuration(\''+therapist+'\',\''+uid+'\',\''+i.invoice+'\',this.value,'+rates.massage+')"></td>'
+      +'<td style="padding:4px 4px 4px 0"><input type="number" min="5" step="5" value="'+corrected+'" style="width:55px;padding:3px 5px;border:0.5px solid rgba(0,0,0,0.25);border-radius:5px;font-size:11px;background:#fffde7" onchange="'+updateFnName+'(\''+therapist+'\',\''+uid+'\',\''+i.invoice+'\',this.value,'+rate+')"></td>'
       +'<td '+cs+'>'+i.date+'</td>'
       +'<td '+cs+'>'+i.quantity+'</td>'
       +'<td '+cs+'>'+i.practitioner+'</td>'
@@ -391,9 +403,13 @@ function makeMassageRows(items,uid,therapist,rates){
       +'<td '+cs+'>'+i.total+'</td>'
       +'<td '+cs+'>'+i.balance+'</td>'
       +'<td '+cs+'>'+i.patient+'</td>'
-      +'<td style="padding:4px 8px 4px 0"><select style="font-size:11px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.2);border-radius:4px;background:#fff" onchange="moveRow(\''+therapist+'\',\''+uid+'\',this,\'massage\',\''+i.invoice+'\')" ><option value="">Move to...</option>'+opts+'</select></td>'
+      +'<td style="padding:4px 8px 4px 0"><select style="font-size:11px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.2);border-radius:4px;background:#fff" onchange="moveRow(\''+therapist+'\',\''+uid+'\',this,\''+sectionType+'\',\''+i.invoice+'\')" ><option value="">Move to...</option>'+opts+'</select></td>'
       +'</tr>';
   }).join('');
+}
+// Kept as a thin wrapper so existing call sites don't need to change.
+function makeMassageRows(items,uid,therapist,rates){
+  return makeEditableDurationRows(items,uid,therapist,rates.massage,'massage');
 }
 function updateMassageDuration(therapist,uid,invoiceNum,newMins,massageRate){
   const data=lastTherapistData[therapist];
@@ -404,6 +420,17 @@ function updateMassageDuration(therapist,uid,invoiceNum,newMins,massageRate){
   item.amount=parseFloat((parseFloat((mins/60).toFixed(2))*massageRate).toFixed(2));
   item.massageMins=mins;
   lastResults[therapist].massage=data.massage.reduce((s,i)=>s+i.amount,0);
+  recalcTotals(uid,therapist);
+}
+function updateAdminDuration(therapist,uid,invoiceNum,newMins,adminRate){
+  const data=lastTherapistData[therapist];
+  if(!data) return;
+  const item=data.admin.find(i=>i.invoice===invoiceNum);
+  if(!item) return;
+  const mins=parseFloat(newMins)||60;
+  item.amount=parseFloat((parseFloat((mins/60).toFixed(2))*adminRate).toFixed(2));
+  item.serviceTime=String(mins);
+  lastResults[therapist].adminPay=data.admin.reduce((s,i)=>s+i.amount,0);
   recalcTotals(uid,therapist);
 }
 
@@ -659,7 +686,7 @@ function calculate(){
         <table class="breakdown-table" style="min-width:900px">
           <thead><tr><th>Component</th><th style="text-align:right">Amount</th></tr></thead>
           <tbody>
-            ${data.admin.length>0?`<tr class="section-header"><td colspan="15">Admin Hours (${data.admin.length} lines · $${sumItems(data.admin).toFixed(2)})</td></tr>${makeHeader()}${makeRows(data.admin,"admin")}<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Admin Total: ${data.admin.reduce((s,i)=>s+(parseFloat(i.serviceTime)||parseDuration(i.name)||60)/60,0).toFixed(2)} hrs</td><td colspan="2" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">$${rates.admin.toFixed(2)}/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$${sumItems(data.admin).toFixed(2)}</td></tr>`:''}
+            ${data.admin.length>0?`<tr class="section-header"><td colspan="17">Admin Hours (${data.admin.length} lines · $${sumItems(data.admin).toFixed(2)})</td></tr>${makeMassageHeader()}${makeEditableDurationRows(data.admin,uid,therapist,rates.admin,'admin')}<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Admin Total: ${data.admin.reduce((s,i)=>s+(parseFloat(i.serviceTime)||parseDuration(i.name)||60)/60,0).toFixed(2)} hrs</td><td colspan="2" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">$${rates.admin.toFixed(2)}/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$${sumItems(data.admin).toFixed(2)}</td></tr>`:''}
             <tr class="section-header"><td colspan="15">Cleaning · ${cleaningDays} days worked</td></tr>
             <tr><td style="padding-left:8px">15min admin × ${cleaningDays} days</td><td>$${cleaning.toFixed(2)}</td></tr>
             <tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Cleaning Total: ${cleaningHrsRounded.toFixed(2)} hrs</td><td colspan="2" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">$${rates.admin.toFixed(2)}/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$${cleaning.toFixed(2)}</td></tr>
@@ -1073,11 +1100,16 @@ function refreshBreakdownTable(therapist, uid){
       const wageRow=(text)=>`<tr><td colspan="7" style="font-size:11px;color:#185fa5;padding:3px 0 3px 8px">${text}</td></tr>`;
 
       let html='';
-      if(allAdmin.length>0){
-        html+=sectionHeader(`Admin Hours & Recovery Zone (${allAdmin.length} lines · $${sumItems(allAdmin).toFixed(2)})`);
-        html+=wageRow(`Admin wage: $${rates.admin.toFixed(2)}/hr`);
+      if(data.admin.length>0){
+        html+=`<tr class="section-header"><td colspan="17">Admin Hours (${data.admin.length} lines · $${sumItems(data.admin).toFixed(2)})</td></tr>`;
+        html+=makeMassageHeader();
+        html+=makeEditableDurationRows(data.admin,uid,therapist,rates.admin,'admin');
+      }
+      if(data.rz.length>0){
+        const rzTotal=sumItems(data.rz).toFixed(2);
+        html+=sectionHeader(`Recovery Zone (${data.rz.length} lines · $${rzTotal})`);
         html+=makeHeaderInner();
-        html+=makeRowsInner(allAdmin,'admin');
+        html+=makeRowsInner(data.rz,'admin');
       }
       html+=sectionHeader(`Cleaning · ${cleaningDays} days worked`);
       html+=`<tr><td style="padding-left:8px">15min admin × ${cleaningDays} days</td><td>$${cleaning.toFixed(2)}</td></tr>`;
@@ -1110,7 +1142,7 @@ function refreshBreakdownTable(therapist, uid){
       if(data.massage.length>0){
         html+=sectionHeader(`Massage Therapy (${data.massage.length} · $${sumItems(data.massage).toFixed(2)})`);
         html+=makeHeaderInner();
-        html+=makeRowsInner(data.massage,'massage');
+        html+=makeMassageRows(data.massage,uid,therapist,rates);
       }
       const prodItems=data.products||[];
       html+=sectionHeader(`Products (${prodItems.length} · $${sumItems(prodItems).toFixed(2)})`);
