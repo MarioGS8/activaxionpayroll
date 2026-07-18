@@ -326,11 +326,7 @@ function classifyAndEarn(cat,name,subtotal,rates,productCat,serviceTime){
     return {commission:0,charting:0,admin:parseFloat((adminHrs*rates.admin).toFixed(2)),massage:0,rz:0,isTreat:false,label:`Admin ${mins}min`};
   }
   if(isMassage(name)){
-    let rawMins=parseDuration(name)||serviceTime||60;
-    if(rawMins===45) rawMins=30;
-    else if(rawMins===75) rawMins=60;
-    else if(rawMins===105) rawMins=90;
-    else rawMins=Math.max(0,rawMins-15); // fallback: any other booked length still has 15min downtime baked in
+    const rawMins=parseDuration(name)||serviceTime||60;
     const massHrs=parseFloat((rawMins/60).toFixed(2));
     return {commission:0,charting:0,admin:0,massage:parseFloat((massHrs*rates.massage).toFixed(2)),rz:0,isTreat:true,label:`Massage ${rawMins}min`,massageMins:rawMins};
   }
@@ -368,7 +364,8 @@ function makeEditableDurationRows(items,uid,therapist,rate,sectionType){
     {val:'admin',label:'Admin Hours'},
     {val:'rz15',label:'Recovery Zone (15min)'},
     {val:'rz30',label:'Recovery Zone (30min+)'},
-    {val:'r15',label:'15-30min Sessions'},
+    {val:'r15_15',label:'15min Sessions'},
+    {val:'r15_30',label:'30min Sessions'},
     {val:'r45',label:'45min Sessions'},
     {val:'r60',label:'60min Sessions'},
     {val:'r90',label:'90min Sessions'},
@@ -383,7 +380,7 @@ function makeEditableDurationRows(items,uid,therapist,rate,sectionType){
     const hasBalance=parseFloat(i.balance||0)>0;
     const rs=hasBalance?'style="background:#fff0f0"':'';
     const corrected = sectionType==='massage'
-      ? (i.massageMins||correctMassageMins(parseFloat(i.serviceTime)||60)||60)
+      ? (i.massageMins||parseDuration(i.name)||parseFloat(i.serviceTime)||60)
       : (parseFloat(i.serviceTime)||parseDuration(i.name)||60);
     const opts=SECTION_OPTIONS.map(o=>'<option value="'+o.val+'">'+o.label+'</option>').join('');
     return '<tr '+rs+'>'
@@ -632,7 +629,8 @@ function calculate(){
       {val:'admin',label:'Admin Hours'},
       {val:'rz15',label:'Recovery Zone (15min)'},
       {val:'rz30',label:'Recovery Zone (30min+)'},
-      {val:'r15',label:'15-30min Sessions'},
+      {val:'r15_15',label:'15min Sessions'},
+    {val:'r15_30',label:'30min Sessions'},
       {val:'r45',label:'45min Sessions'},
       {val:'r60',label:'60min Sessions'},
       {val:'r90',label:'90min Sessions'},
@@ -707,22 +705,22 @@ function calculate(){
                 +'<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Total: '+totalMin+' min · Qty: '+totalQty+'</td><td colspan="5" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">'+rates.massage.toFixed(2)+'/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$'+totalPay+'</td></tr>';
             })()}
             ${(()=>{
-              if(!data.rz||data.rz.length===0) return '';
-              const rzTotal=data.rz.reduce((s,i)=>s+i.amount,0).toFixed(2);
-              return '<tr class="section-header"><td colspan="15">Recovery Zone ('+data.rz.length+' lines · $'+rzTotal+')</td></tr>'
-                +makeHeader()+makeRows(data.rz,'admin')
-                +'<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="10" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">RZ Total: '+data.rz.length+' sessions · flat rate ($6/$12)</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$'+rzTotal+'</td></tr>';
-            })()}
-            ${(()=>{
               const prodItems=data.products||[];
               const prodTotal=prodItems.reduce((s,i)=>s+i.amount,0).toFixed(2);
               let h='<tr class="section-header"><td colspan="15">Products ('+prodItems.length+' · $'+prodTotal+')</td></tr>';
               h+='<tr><td colspan="7" style="font-size:11px;color:#185fa5;padding:3px 0 3px 8px">Commission: 10% of subtotal</td></tr>';
               if(prodItems.length>0){ h+=makeHeader()+makeRows(prodItems,'product'); }
               else{ h+='<tr><td colspan="14" style="color:#5f5e5a;font-size:11px;padding:4px 0 4px 8px">No products this period</td></tr>'; }
-              h+='<tr style="border-top:1px solid rgba(0,0,0,0.15);background:#fff8e1"><td colspan="10" style="font-size:12px;font-weight:600;padding:6px 0 6px 8px;color:#854f0b">Total Commission (RZ + Products)</td><td colspan="4" style="font-size:12px;font-weight:600;text-align:right;padding:6px 0;color:#854f0b">$'+(data.rz.reduce((s,i)=>s+i.amount,0)+prodItems.reduce((s,i)=>s+i.amount,0)).toFixed(2)+'</td></tr>';
               return h;
             })()}
+            ${(()=>{
+              if(!data.rz||data.rz.length===0) return '';
+              const rzTotal=data.rz.reduce((s,i)=>s+i.amount,0).toFixed(2);
+              return '<tr class="section-header"><td colspan="15">Recovery Zone ('+data.rz.length+' lines · $'+rzTotal+')</td></tr>'
+                +makeHeader()+makeRows(data.rz,'admin')
+                +'<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="10" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">RZ Total: '+data.rz.length+' sessions · flat rate ($6/$12)</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$'+rzTotal+'</td></tr>';
+            })()}
+            <tr style="border-top:1px solid rgba(0,0,0,0.15);background:#fff8e1"><td colspan="10" style="font-size:12px;font-weight:600;padding:6px 0 6px 8px;color:#854f0b">Total Commission (RZ + Products)</td><td colspan="4" style="font-size:12px;font-weight:600;text-align:right;padding:6px 0;color:#854f0b">$${(data.rz.reduce((s,i)=>s+i.amount,0)+(data.products||[]).reduce((s,i)=>s+i.amount,0)).toFixed(2)}</td></tr>
             <tr style="background:#1a1a18"><td colspan="14" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#fff;letter-spacing:0.02em">${therapist} — Summary</td></tr>
             ${(()=>{
               const adminHrsOnly=(data.admin.reduce((s,i)=>{const m=parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0)).toFixed(2);
@@ -852,7 +850,8 @@ function calculate(){
               <select id="manual-section-${uid}" onchange="updateManualValueLabel('${uid}')">
                 <option value="">-- Choose --</option>
                 <option value="admin">Admin Hours</option>
-                <option value="r15">15-30min Session</option>
+                <option value="r15_15">15min Session</option>
+                <option value="r15_30">30min Session</option>
                 <option value="r45">45min Session</option>
                 <option value="r60">60min Session</option>
                 <option value="r90">90min Session</option>
@@ -1003,8 +1002,14 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
     item.amount = parseFloat((subtotal*0.10).toFixed(2));
     data.products = data.products||[];
     data.products.push(item);
+  } else if(targetSection==='r15_15'){
+    item.amount = getDurationRate(rates, 15);
+    data.sessions.r15.push(item);
+  } else if(targetSection==='r15_30'){
+    item.amount = getDurationRate(rates, 30);
+    data.sessions.r15.push(item);
   } else {
-    const minsMap = {r15:30,r45:45,r60:60,r90:90};
+    const minsMap = {r45:45,r60:60,r90:90};
     item.amount = getDurationRate(rates, minsMap[targetSection]||60);
     data.sessions[targetSection].push(item);
   }
@@ -1014,6 +1019,7 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
   else if(targetSection==='rz15'||targetSection==='rz30'){ data.rz=sortByDate(data.rz); }
   else if(targetSection==='massage'){ data.massage=sortByDate(data.massage); }
   else if(targetSection==='product'){ data.products=sortByDate(data.products); }
+  else if(targetSection==='r15_15'||targetSection==='r15_30'){ data.sessions.r15=sortByDate(data.sessions.r15); }
   else { data.sessions[targetSection]=sortByDate(data.sessions[targetSection]); }
 
   refreshBreakdownTable(therapist, uid);
@@ -1063,7 +1069,8 @@ function refreshBreakdownTable(therapist, uid){
         {val:'admin',label:'Admin Hours'},
         {val:'rz15',label:'Recovery Zone (15min)'},
         {val:'rz30',label:'Recovery Zone (30min+)'},
-        {val:'r15',label:'15-30min Sessions'},
+        {val:'r15_15',label:'15min Sessions'},
+    {val:'r15_30',label:'30min Sessions'},
         {val:'r45',label:'45min Sessions'},
         {val:'r60',label:'60min Sessions'},
         {val:'r90',label:'90min Sessions'},
@@ -1105,12 +1112,6 @@ function refreshBreakdownTable(therapist, uid){
         html+=makeMassageHeader();
         html+=makeEditableDurationRows(data.admin,uid,therapist,rates.admin,'admin');
       }
-      if(data.rz.length>0){
-        const rzTotal=sumItems(data.rz).toFixed(2);
-        html+=sectionHeader(`Recovery Zone (${data.rz.length} lines · $${rzTotal})`);
-        html+=makeHeaderInner();
-        html+=makeRowsInner(data.rz,'admin');
-      }
       html+=sectionHeader(`Cleaning · ${cleaningDays} days worked`);
       html+=`<tr><td style="padding-left:8px">15min admin × ${cleaningDays} days</td><td>$${cleaning.toFixed(2)}</td></tr>`;
       html+=`<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Admin & Cleaning Total: ${(data.admin.reduce((s,i)=>{const m=parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0)+(cleaningDays*15/60)).toFixed(2)} hrs</td><td colspan="2" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">${rates.admin.toFixed(2)}/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$${(sumItems(data.admin)+cleaning).toFixed(2)}</td></tr>`;
@@ -1149,6 +1150,12 @@ function refreshBreakdownTable(therapist, uid){
       html+=`<tr><td colspan="7" style="font-size:11px;color:#185fa5;padding:3px 0 3px 8px">Commission: 10% of subtotal</td></tr>`;
       if(prodItems.length>0){ html+=makeHeaderInner(); html+=makeRowsInner(prodItems,'product'); }
       else{ html+=`<tr><td colspan="14" style="color:#5f5e5a;font-size:11px;padding:4px 0 4px 8px">No products this period</td></tr>`; }
+      if(data.rz.length>0){
+        const rzTotal=sumItems(data.rz).toFixed(2);
+        html+=sectionHeader(`Recovery Zone (${data.rz.length} lines · $${rzTotal})`);
+        html+=makeHeaderInner();
+        html+=makeRowsInner(data.rz,'admin');
+      }
       if(salary>0){
         html+=sectionHeader('Salary');
         html+=`<tr><td style="padding-left:8px">Per period</td><td>$${salary.toFixed(2)}</td></tr>`;
@@ -1303,8 +1310,20 @@ function submitManualEntry(therapist, uid){
     base.amount = parseFloat((rawVal*0.10).toFixed(2));
     data.products = data.products||[];
     data.products.push(base);
-  } else if(['r15','r45','r60','r90'].includes(section)){
-    const minsMap = {r15:30,r45:45,r60:60,r90:90};
+  } else if(section==='r15_15'){
+    base.serviceCategory='Treatment'; base.serviceTime='15'; base.subtotal='';
+    base.amount = getDurationRate(rates, 15);
+    data.sessions.r15.push(base);
+    data.treatmentDays.add(dateVal);
+    data.chartingCount = (data.chartingCount||0)+1;
+  } else if(section==='r15_30'){
+    base.serviceCategory='Treatment'; base.serviceTime='30'; base.subtotal='';
+    base.amount = getDurationRate(rates, 30);
+    data.sessions.r15.push(base);
+    data.treatmentDays.add(dateVal);
+    data.chartingCount = (data.chartingCount||0)+1;
+  } else if(['r45','r60','r90'].includes(section)){
+    const minsMap = {r45:45,r60:60,r90:90};
     const mins = minsMap[section];
     base.serviceCategory='Treatment'; base.serviceTime=String(mins); base.subtotal='';
     base.amount = getDurationRate(rates, mins);
