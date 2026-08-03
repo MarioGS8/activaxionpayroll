@@ -419,6 +419,69 @@ function updateCancellationType(therapist,uid,invoiceNum,selectEl){
   if(amtEl) amtEl.textContent='$'+item.amount.toFixed(2);
   recalcTotals(uid,therapist);
 }
+// Recovery Zone is a flat-fee section (not rate x duration), so each line gets a direct
+// dollar box instead of a duration box - lets the therapist's actual $6/$12 be overridden
+// per line without touching the global rate. Keeps the standard "Move to" dropdown too,
+// tagged 'admin' like the rest of the RZ plumbing (moveRow's 'admin' branch already
+// filters both data.admin and data.rz, since RZ rows have always shared that tag).
+function makeRecoveryZoneHeader(){
+  const hdrs=['Invoice #','Invoice Date','Service Category','Line Item Name','Service Time','Service Date','Qty','Practitioner','Discount Name','Disc Amt','Subtotal','Tax','Total','Balance','Patient Name','Commission ($)','Move to'];
+  return '<tr style="border-bottom:0.5px solid rgba(0,0,0,0.15)">'+hdrs.map(h=>'<th style="font-size:11px;color:#5f5e5a;font-weight:500;padding:4px 8px 6px 0;white-space:nowrap">'+h+'</th>').join('')+'</tr>';
+}
+function makeRecoveryZoneRows(items,uid,therapist){
+  const cs='style="color:#5f5e5a;font-size:11px;white-space:nowrap;padding:4px 8px 4px 0"';
+  const SECTION_OPTIONS=[
+    {val:'admin',label:'Admin Hours'},
+    {val:'rz15',label:'Recovery Zone (15min)'},
+    {val:'rz30',label:'Recovery Zone (30min+)'},
+    {val:'r15_15',label:'15min Sessions'},
+    {val:'r15_30',label:'30min Sessions'},
+    {val:'r45',label:'45min Sessions'},
+    {val:'r60',label:'60min Sessions'},
+    {val:'r90',label:'90min Sessions'},
+    {val:'massage',label:'Massage Therapy'},
+    {val:'product',label:'Products'},
+    {val:'delete',label:'🗑 Delete this line'},
+  ];
+  return items.map(i=>{
+    if(!itemStore[therapist]) itemStore[therapist]={};
+    itemStore[therapist][i.invoice]=i;
+    const hasBalance=parseFloat(i.balance||0)>0;
+    const rs=hasBalance?'style="background:#fff0f0"':'';
+    const opts=SECTION_OPTIONS.map(o=>'<option value="'+o.val+'">'+o.label+'</option>').join('');
+    return '<tr '+rs+'>'
+      +'<td '+cs+'>'+i.invoice+'</td>'
+      +'<td '+cs+'>'+i.invoiceDate+'</td>'
+      +'<td '+cs+'>'+(i.serviceCategory||'')+'</td>'
+      +'<td style="color:#5f5e5a;font-size:11px;padding:4px 8px 4px 0;min-width:220px">'+i.name+'</td>'
+      +'<td '+cs+'>'+i.serviceTime+'</td>'
+      +'<td '+cs+'>'+i.date+'</td>'
+      +'<td '+cs+'>'+i.quantity+'</td>'
+      +'<td '+cs+'>'+i.practitioner+'</td>'
+      +'<td '+cs+'>'+i.discountName+'</td>'
+      +'<td '+cs+'>'+i.discountAmount+'</td>'
+      +'<td '+cs+'>'+i.subtotal+'</td>'
+      +'<td '+cs+'>'+i.taxAmount+'</td>'
+      +'<td '+cs+'>'+i.total+'</td>'
+      +'<td '+cs+'>'+i.balance+'</td>'
+      +'<td '+cs+'>'+i.patient+'</td>'
+      +'<td style="padding:4px 4px 4px 0"><input type="number" min="0" step="0.01" value="'+(i.amount||0).toFixed(2)+'" style="width:70px;padding:3px 5px;border:0.5px solid rgba(0,0,0,0.25);border-radius:5px;font-size:11px;background:#fffde7;text-align:right" onchange="updateRecoveryZoneAmount(\''+therapist+'\',\''+uid+'\',\''+i.invoice+'\',this.value)"></td>'
+      +'<td style="padding:4px 8px 4px 0"><select style="font-size:11px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.2);border-radius:4px;background:#fff" onchange="moveRow(\''+therapist+'\',\''+uid+'\',this,\'admin\',\''+i.invoice+'\')"><option value="">Move to...</option>'+opts+'</select></td>'
+      +'</tr>';
+  }).join('');
+}
+function updateRecoveryZoneAmount(therapist,uid,invoiceNum,newVal){
+  const data=lastTherapistData[therapist];
+  if(!data) return;
+  const item=data.rz.find(i=>i.invoice===invoiceNum);
+  if(!item) return;
+  item.amount=parseFloat(newVal)||0;
+  const rzSum=data.rz.reduce((s,i)=>s+(i.amount||0),0);
+  lastResults[therapist].rz=rzSum;
+  const rzTotalEl=document.getElementById('rz-total-'+uid);
+  if(rzTotalEl) rzTotalEl.textContent='$'+rzSum.toFixed(2);
+  recalcTotals(uid,therapist);
+}
 // Shared by Admin and Massage rows in BOTH the initial and refresh renders (same function,
 // same call signature, everywhere) - specifically to avoid the class of bug where two
 // separate copies of "the same" row renderer silently drift apart (one gets an edit box,
@@ -794,9 +857,9 @@ function calculate(){
             ${(()=>{
               if(!data.rz||data.rz.length===0) return '';
               const rzTotal=data.rz.reduce((s,i)=>s+i.amount,0).toFixed(2);
-              return '<tr class="section-header"><td colspan="15">Recovery Zone ('+data.rz.length+' lines · $'+rzTotal+')</td></tr>'
-                +makeHeader()+makeRows(data.rz,'admin')
-                +'<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="10" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">RZ Total: '+data.rz.length+' sessions · flat rate ($6/$12)</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$'+rzTotal+'</td></tr>';
+              return '<tr class="section-header"><td colspan="17">Recovery Zone ('+data.rz.length+' lines · $'+rzTotal+')</td></tr>'
+                +makeRecoveryZoneHeader()+makeRecoveryZoneRows(data.rz,uid,therapist)
+                +'<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="10" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">RZ Total: '+data.rz.length+' sessions</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0" id="rz-total-'+uid+'">$'+rzTotal+'</td></tr>';
             })()}
             ${(()=>{
               const cancItems=data.cancellations||[];
@@ -1252,8 +1315,9 @@ function refreshBreakdownTable(therapist, uid){
       if(data.rz.length>0){
         const rzTotal=sumItems(data.rz).toFixed(2);
         html+=sectionHeader(`Recovery Zone (${data.rz.length} lines · $${rzTotal})`);
-        html+=makeHeaderInner();
-        html+=makeRowsInner(data.rz,'admin');
+        html+=makeRecoveryZoneHeader();
+        html+=makeRecoveryZoneRows(data.rz,uid,therapist);
+        html+=`<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="10" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">RZ Total: ${data.rz.length} sessions</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0" id="rz-total-${uid}">$${rzTotal}</td></tr>`;
       }
       {
         const cancItems=data.cancellations||[];
