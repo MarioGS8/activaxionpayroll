@@ -105,7 +105,7 @@
         <thead>
           <tr>
             <th>Avg Wage/hr</th><th>Name</th><th>15min</th><th>30min</th><th>45min</th><th>60min</th><th>90min</th>
-            <th>Massage/hr</th><th>Admin/hr</th><th>RZ 15min</th><th>RZ 30min+</th><th>Salary/period</th><th></th>
+            <th>Massage/hr</th><th>Admin/hr</th><th>RZ 15min</th><th>RZ 30min+</th><th>Salary/period</th><th>Salary $/hr</th><th></th>
           </tr>
         </thead>
         <tbody id="rates-tbody"></tbody>
@@ -159,8 +159,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 let THERAPIST_RATES = {
-  "Mario Starnino":     { r15:21.00, r30:42.00, r45:53.50, r60:57.50, r90:86.25, massage:0,  admin:22.10, rz15:6, rz30:12, salary:1000 },
-  "Alexis Boosamra":    { r15:21.00, r30:42.00, r45:53.50, r60:57.50, r90:86.25, massage:0,  admin:22.10, rz15:6, rz30:12, salary:337  },
+  "Mario Starnino":     { r15:21.00, r30:42.00, r45:53.50, r60:57.50, r90:86.25, massage:0,  admin:22.10, rz15:6, rz30:12, salary:1000, salaryRate:50 },
+  "Alexis Boosamra":    { r15:21.00, r30:42.00, r45:53.50, r60:57.50, r90:86.25, massage:0,  admin:22.10, rz15:6, rz30:12, salary:337,  salaryRate:33.7 },
   "Jordan Katsoulis":   { r15:17.85, r30:35.70, r45:45.38, r60:48.96, r90:73.44, massage:0,  admin:20.50, rz15:6, rz30:12, salary:0   },
   "Gabrielle Khreiche": { r15:15.75, r30:31.50, r45:40.00, r60:43.00, r90:64.50, massage:46, admin:18.10, rz15:6, rz30:12, salary:0   },
   "Grace Lewis":        { r15:14.00, r30:28.00, r45:36.00, r60:40.00, r90:60.00, massage:0,  admin:16.10, rz15:6, rz30:12, salary:0   },
@@ -202,6 +202,7 @@ function toggleAllTherapists(show){
   });
 }
 function calcAvgWage(r){
+  if(r.salary>0 && r.salaryRate>0) return r.salaryRate;
   const baseRates=[r.r15/15*60,r.r30/30*60,r.r45/45*60,r.r60/60*60,r.r90/90*60,
     r.admin??0,(r.rz15??6)/15*60,(r.rz30??12)/30*60];
   const sum=baseRates.reduce((a,b)=>a+b,0);
@@ -225,11 +226,12 @@ function makeRow(name,r){
     <td><input type="number" value="${r.rz15??6}" step="0.01" min="0"></td>
     <td><input type="number" value="${r.rz30??12}" step="0.01" min="0"></td>
     <td><input type="number" value="${r.salary}" step="0.01" min="0"></td>
+    <td><input type="number" value="${r.salaryRate||''}" step="0.01" min="0" placeholder="—"></td>
     <td><button class="del-btn" onclick="this.closest('tr').remove()">×</button></td>`;
   return tr;
 }
 function addTherapistRow(){
-  document.getElementById('rates-tbody').appendChild(makeRow('',{r15:0,r30:0,r45:0,r60:0,r90:0,massage:0,admin:0,rz15:6,rz30:12,salary:0}));
+  document.getElementById('rates-tbody').appendChild(makeRow('',{r15:0,r30:0,r45:0,r60:0,r90:0,massage:0,admin:0,rz15:6,rz30:12,salary:0,salaryRate:0}));
 }
 function saveRates(){
   const newRates={};
@@ -237,7 +239,7 @@ function saveRates(){
     const inputs=row.querySelectorAll('input');
     const name=inputs[0].value.trim();
     if(!name) continue;
-    newRates[name]={r15:parseFloat(inputs[1].value)||0,r30:parseFloat(inputs[2].value)||0,r45:parseFloat(inputs[3].value)||0,r60:parseFloat(inputs[4].value)||0,r90:parseFloat(inputs[5].value)||0,massage:parseFloat(inputs[6].value)||0,admin:parseFloat(inputs[7].value)||0,rz15:parseFloat(inputs[8].value)||0,rz30:parseFloat(inputs[9].value)||0,salary:parseFloat(inputs[10].value)||0};
+    newRates[name]={r15:parseFloat(inputs[1].value)||0,r30:parseFloat(inputs[2].value)||0,r45:parseFloat(inputs[3].value)||0,r60:parseFloat(inputs[4].value)||0,r90:parseFloat(inputs[5].value)||0,massage:parseFloat(inputs[6].value)||0,admin:parseFloat(inputs[7].value)||0,rz15:parseFloat(inputs[8].value)||0,rz30:parseFloat(inputs[9].value)||0,salary:parseFloat(inputs[10].value)||0,salaryRate:parseFloat(inputs[11].value)||0};
   }
   THERAPIST_RATES=newRates;
   const blob=new Blob([JSON.stringify(newRates,null,2)],{type:'application/json'});
@@ -288,7 +290,6 @@ function parseDuration(name){
 function isMassage(name){ return /\(MT\)/i.test(name)||(/massage/i.test(name)&&!/\(AT\)/i.test(name)); }
 function isATMassage(name){ return /\(AT\)/i.test(name); }
 function isAdminHours(cat,name){ return /^admin$/i.test(cat)||/admin hours/i.test(name); }
-function isRLT(name){ return /RLT|red light/i.test(name); }
 function isRecoveryZone(cat){ return /recovery zone/i.test(cat); }
 function isProduct(cat,name){ return !cat||/theraband|epsom|electrolyte|protein|normatec|hyperice|squat wedge|athletic tape|origen|hyako|continuing education/i.test(name)||/neurotracker/i.test(name)&&!/consult/i.test(name); }
 function isCancellation(cat,name){ return /cancellation/i.test(name)||/cancellation/i.test(cat); }
@@ -311,7 +312,14 @@ function classifyAndEarn(cat,name,subtotal,rates,productCat,serviceTime){
   if(productCat) return {commission:subtotal*0.10,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Product (10%)'};
   if(isProduct(cat,name)) return {commission:subtotal*0.10,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Product (10%)'};
   if(isRecoveryZone(cat)){
-    if(isRLT(name)) return {commission:0,charting:0,admin:0,massage:0,rz:rates.rz15??6,isTreat:false,label:'RZ 15min'};
+    // Was keying off whether the name literally said "RLT"/"red light" - but Noterro
+    // exports use other abbreviations for the same 15min service (e.g. "(RR)" for
+    // Recovery Room), which silently fell through to the 30min+ rate. The section is
+    // labeled "flat rate ($6/$12)" by duration, so duration is what should decide it -
+    // prefer the actual Service Time column, fall back to parsing the name only if that's
+    // missing, and default to 15min (matches the previous fallback for a bare RZ line).
+    const mins=serviceTime||parseDuration(name)||15;
+    if(mins<=15) return {commission:0,charting:0,admin:0,massage:0,rz:rates.rz15??6,isTreat:false,label:'RZ 15min'};
     return {commission:0,charting:0,admin:0,massage:0,rz:rates.rz30??12,isTreat:false,label:'RZ 30min+'};
   }
   if(isAdminHours(cat,name)){
@@ -350,6 +358,66 @@ function correctMassageMins(raw){
 function makeMassageHeader(){
   const hdrs=['Invoice #','Invoice Date','Service Category','Line Item Name','Service Time','Duration','Service Date','Qty','Practitioner','Discount Name','Disc Amt','Subtotal','Tax','Total','Balance','Patient Name','Move to'];
   return '<tr style="border-bottom:0.5px solid rgba(0,0,0,0.15)">'+hdrs.map(h=>'<th style="font-size:11px;color:#5f5e5a;font-weight:500;padding:4px 8px 6px 0;white-space:nowrap">'+h+'</th>').join('')+'</tr>';
+}
+// Cancellation fees stay under Commission (alongside RZ and Products) rather than being
+// reclassified into a treatment-duration bucket - they're commission earned on a session
+// that didn't happen, priced by picking which duration/service it would have been.
+function makeCancellationHeader(){
+  const hdrs=['Invoice #','Invoice Date','Service Category','Line Item Name','Service Date','Qty','Practitioner','Discount Name','Disc Amt','Subtotal','Tax','Total (incl. tax)','Balance','Patient Name','Cancelled Service Type','Commission'];
+  return '<tr style="border-bottom:0.5px solid rgba(0,0,0,0.15)">'+hdrs.map(h=>'<th style="font-size:11px;color:#5f5e5a;font-weight:500;padding:4px 8px 6px 0;white-space:nowrap">'+h+'</th>').join('')+'</tr>';
+}
+function cancellationTypeOptions(rates,currentAmount){
+  const opts=[{val:'',label:'-- Select --'}];
+  for(const m of [15,30,45,60,90]){
+    const rate=getDurationRate(rates,m);
+    opts.push({val:String(rate),label:m+'min ($'+rate.toFixed(2)+')'});
+  }
+  if(rates.massage>0){
+    for(const m of [30,45,60,90]){
+      const rate=parseFloat((rates.massage*m/60).toFixed(2));
+      opts.push({val:String(rate),label:'Massage '+m+'min ($'+rate.toFixed(2)+')'});
+    }
+  }
+  return opts.map(o=>'<option value="'+o.val+'"'+((currentAmount>0 && parseFloat(o.val)===currentAmount)?' selected':'')+'>'+o.label+'</option>').join('');
+}
+function makeCancellationRows(items,uid,therapist,rates){
+  const cs='style="color:#5f5e5a;font-size:11px;white-space:nowrap;padding:4px 8px 4px 0"';
+  return items.map(i=>{
+    if(!itemStore[therapist]) itemStore[therapist]={};
+    itemStore[therapist][i.invoice]=i;
+    const hasBalance=parseFloat(i.balance||0)>0;
+    const rs=hasBalance?'style="background:#fff0f0"':'';
+    const opts=cancellationTypeOptions(rates,i.amount||0);
+    return '<tr '+rs+'>'
+      +'<td '+cs+'>'+i.invoice+'</td>'
+      +'<td '+cs+'>'+i.invoiceDate+'</td>'
+      +'<td '+cs+'>'+(i.serviceCategory||'')+'</td>'
+      +'<td style="color:#5f5e5a;font-size:11px;padding:4px 8px 4px 0;min-width:220px">'+i.name+'</td>'
+      +'<td '+cs+'>'+i.date+'</td>'
+      +'<td '+cs+'>'+i.quantity+'</td>'
+      +'<td '+cs+'>'+i.practitioner+'</td>'
+      +'<td '+cs+'>'+i.discountName+'</td>'
+      +'<td '+cs+'>'+i.discountAmount+'</td>'
+      +'<td '+cs+'>'+i.subtotal+'</td>'
+      +'<td '+cs+'>'+i.taxAmount+'</td>'
+      +'<td '+cs+'>'+i.total+'</td>'
+      +'<td '+cs+'>'+i.balance+'</td>'
+      +'<td '+cs+'>'+i.patient+'</td>'
+      +'<td style="padding:4px 8px 4px 0"><select class="canc-select" onchange="updateCancellationType(\''+therapist+'\',\''+uid+'\',\''+i.invoice+'\',this)">'+opts+'</select></td>'
+      +'<td style="padding:4px 8px 4px 0;text-align:right;font-weight:500" id="canc-amount-'+uid+'-'+i.invoice+'">$'+(i.amount||0).toFixed(2)+'</td>'
+      +'</tr>';
+  }).join('');
+}
+function updateCancellationType(therapist,uid,invoiceNum,selectEl){
+  const data=lastTherapistData[therapist];
+  if(!data||!data.cancellations) return;
+  const item=data.cancellations.find(i=>i.invoice===invoiceNum);
+  if(!item) return;
+  item.amount=parseFloat(selectEl.value)||0;
+  item.serviceTypeLabel=selectEl.selectedIndex>=0?selectEl.options[selectEl.selectedIndex].text:'';
+  const amtEl=document.getElementById('canc-amount-'+uid+'-'+invoiceNum);
+  if(amtEl) amtEl.textContent='$'+item.amount.toFixed(2);
+  recalcTotals(uid,therapist);
 }
 // Shared by Admin and Massage rows in BOTH the initial and refresh renders (same function,
 // same call signature, everywhere) - specifically to avoid the class of bug where two
@@ -513,7 +581,7 @@ function calculate(){
     if(svcDate<winStart||svcDate>winEnd){ diag.outOfRange++; continue; }
     if(!therapistData[practitioner]) therapistData[practitioner]={
       sessions:{r15:[],r30:[],r45:[],r60:[],r90:[]},
-      massage:[],admin:[],rz:[],products:[],charting:0,chartingCount:0,treatmentDays:new Set(),flags:[],dateMismatches:[],excludedAdmin:[],rawRows:[]
+      massage:[],admin:[],rz:[],products:[],cancellations:[],charting:0,chartingCount:0,treatmentDays:new Set(),flags:[],dateMismatches:[],excludedAdmin:[],rawRows:[]
     };
     const cat=(row['Service Category']||'').trim();
     const productCategory=(row['Product Category']||'').trim();
@@ -528,20 +596,16 @@ function calculate(){
     }
     if(earn.label==='Skip') continue;
     const totalWithTax=parseFloat(row['Total'])||0;
-    if(earn.flag){
-      const flagInvoice=(row['Invoice #']||'').trim();
-      const flagPatient=(row['Patient Name']||'').trim();
-      therapistData[practitioner].flags.push({date:rawDate,name,totalWithTax,invoice:flagInvoice,patient:flagPatient});
-      continue;
-    }
     const d=therapistData[practitioner];
     const patientName=(row['Patient Name']||'').trim();
     const invoiceDate=(row['Invoice Date']||'').split(' ')[0];
     const invoiceNum=(row['Invoice #']||'').trim();
-    if(invoiceDate && rawDate && invoiceDate !== rawDate){
-      therapistData[practitioner].dateMismatches.push({invoice:invoiceNum,invoiceDate,serviceDate:rawDate,name,patient:patientName});
-    }
     const balance=parseFloat(row['Balance'])||0;
+    // Built here (before the cancellation/flag branches) so a cancellation gets the same
+    // full invoice detail as a normal line item, not the stripped-down {date,name,
+    // totalWithTax,invoice,patient} that the generic review-flag path uses. Cancellations
+    // are priced via a dropdown (like moving a session between duration buckets), so they
+    // need every column the standard row renderer expects.
     const rawEntry={
       invoice:invoiceNum,
       invoiceDate:(row['Invoice Date']||'').split(' ')[0],
@@ -560,6 +624,20 @@ function calculate(){
       patient:patientName,
       amount:0
     };
+    if(earn.label==='Cancellation'){
+      // Starts at amount:0 (unpriced) until the therapist picks a service type in the
+      // Cancellations section; recalcTotals() sums whatever's been priced so far.
+      rawEntry.totalWithTax=totalWithTax;
+      d.cancellations.push(rawEntry);
+      continue;
+    }
+    if(earn.flag){
+      d.flags.push({date:rawDate,name,totalWithTax,invoice:invoiceNum,patient:patientName});
+      continue;
+    }
+    if(invoiceDate && rawDate && invoiceDate !== rawDate){
+      d.dateMismatches.push({invoice:invoiceNum,invoiceDate,serviceDate:rawDate,name,patient:patientName});
+    }
     if(earn.label==='Product (10%)'){ rawEntry.amount=earn.commission; d.products.push(rawEntry); }
     else if(earn.admin>0){ rawEntry.amount=earn.admin; d.admin.push(rawEntry); }
     else if(earn.rz>0){ rawEntry.amount=earn.rz; d.rz.push(rawEntry); }
@@ -720,7 +798,16 @@ function calculate(){
                 +makeHeader()+makeRows(data.rz,'admin')
                 +'<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="10" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">RZ Total: '+data.rz.length+' sessions · flat rate ($6/$12)</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$'+rzTotal+'</td></tr>';
             })()}
-            <tr style="border-top:1px solid rgba(0,0,0,0.15);background:#fff8e1"><td colspan="10" style="font-size:12px;font-weight:600;padding:6px 0 6px 8px;color:#854f0b">Total Commission (RZ + Products)</td><td colspan="4" style="font-size:12px;font-weight:600;text-align:right;padding:6px 0;color:#854f0b">$${(data.rz.reduce((s,i)=>s+i.amount,0)+(data.products||[]).reduce((s,i)=>s+i.amount,0)).toFixed(2)}</td></tr>
+            ${(()=>{
+              const cancItems=data.cancellations||[];
+              const cancTotal=cancItems.reduce((s,i)=>s+(i.amount||0),0).toFixed(2);
+              let h='<tr class="section-header"><td colspan="16">Cancellations ('+cancItems.length+' · $'+cancTotal+')</td></tr>';
+              h+='<tr><td colspan="7" style="font-size:11px;color:#185fa5;padding:3px 0 3px 8px">Commission: select the cancelled service type to set the rate</td></tr>';
+              if(cancItems.length>0){ h+=makeCancellationHeader()+makeCancellationRows(cancItems,uid,therapist,rates); }
+              else{ h+='<tr><td colspan="16" style="color:#5f5e5a;font-size:11px;padding:4px 0 4px 8px">No cancellations this period</td></tr>'; }
+              return h;
+            })()}
+            <tr style="border-top:1px solid rgba(0,0,0,0.15);background:#fff8e1"><td colspan="10" style="font-size:12px;font-weight:600;padding:6px 0 6px 8px;color:#854f0b">Total Commission (RZ + Products + Cancellations)</td><td colspan="4" style="font-size:12px;font-weight:600;text-align:right;padding:6px 0;color:#854f0b" id="total-commission-${uid}">$0.00</td></tr>
             <tr style="background:#1a1a18"><td colspan="14" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#fff;letter-spacing:0.02em">${therapist} — Summary</td></tr>
             ${(()=>{
               const adminHrsOnly=(data.admin.reduce((s,i)=>{const m=parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0)).toFixed(2);
@@ -742,7 +829,7 @@ function calculate(){
               const summaryRow=(label,rate,hrs,pay)=>`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)">
                 <td colspan="7" style="font-size:12px;padding:4px 0 4px 8px;color:#1a1a18">${label}</td>
                 <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5">${rate!==null?'$'+rate+'/hr':''}</td>
-                <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a">${hrs!==null?hrs+' hrs':''}</td>
+                <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a">${hrs!==null?hrs:''}</td>
                 <td colspan="2" style="font-size:12px;text-align:right;font-weight:500">$${pay}</td>
               </tr>`;
               let rows='';
@@ -753,7 +840,12 @@ function calculate(){
               rows+=summaryRow('45min Therapy',(rates.r45/45*60).toFixed(2),r45Hrs,r45Pay);
               rows+=summaryRow('60-90min Therapy',(rates.r60/60*60).toFixed(2),r60r90Hrs,r60r90Pay);
               if(rates.massage>0) rows+=summaryRow('Massage Therapy',(rates.massage).toFixed(2),massHrs,massPay);
-              rows+=summaryRow('Commission (Product & RZ)',null,null,(sumItems(data.rz)+parseFloat(prodPay)).toFixed(2));
+              rows+=`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)">
+                <td colspan="7" style="font-size:12px;padding:4px 0 4px 8px;color:#1a1a18">Commission (Product & RZ & Cancellations)</td>
+                <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5"></td>
+                <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a"></td>
+                <td colspan="2" style="font-size:12px;text-align:right;font-weight:500" id="summary-commission-${uid}">$0.00</td>
+              </tr>`;
               if(salary>0) rows+=summaryRow('Salary',(rates.salary?calcAvgWage(rates).toFixed(2):null),(rates.salary?(rates.salary/calcAvgWage(rates)).toFixed(2):null),salPay);
               return rows;
             })()}
@@ -799,7 +891,7 @@ function calculate(){
         </div>
         ${data.flags.length>0?`
         <div style="margin-top:1rem;padding:12px;background:#faeeda;border-radius:8px;">
-          <p style="font-size:12px;color:#854f0b;font-weight:500;margin-bottom:8px">⚠ Select service type for each cancellation fee:</p>
+          <p style="font-size:12px;color:#854f0b;font-weight:500;margin-bottom:8px">⚠ Unrecognized line items — select what these actually are:</p>
           <table class="breakdown-table">
             <thead><tr><th>Invoice #</th><th>Date</th><th>Patient</th><th>Total incl. tax</th><th>Service type</th><th style="text-align:right">Commission</th></tr></thead>
             <tbody>
@@ -923,15 +1015,18 @@ function recalcTotals(uid, therapist){
   const vacation=parseFloat(document.getElementById('vacation-'+uid)?.value)||0;
   const bonus=parseFloat(document.getElementById('bonus-'+uid)?.value)||0;
   r.sick=sick; r.holiday=holiday; r.vacation=vacation; r.bonus=bonus;
-  let cancTotal=0;
+  let flagSelectTotal=0;
   const flagCount=r.flagCount||0;
   for(let i=0;i<flagCount;i++){
     const sel=document.getElementById('canc-'+uid+'-'+i);
     const val=parseFloat(sel?sel.value:0)||0;
-    cancTotal+=val;
+    flagSelectTotal+=val;
     const valEl=document.getElementById('canc-val-'+uid+'-'+i);
     if(valEl) valEl.textContent='$'+val.toFixed(2);
   }
+  const cancellationsArr=(lastTherapistData[therapist]&&lastTherapistData[therapist].cancellations)||[];
+  const cancellationsArrTotal=cancellationsArr.reduce((s,i)=>s+(i.amount||0),0);
+  const cancTotal=flagSelectTotal+cancellationsArrTotal;
   r.cancellation=cancTotal;
   const gross=r.commission+r.charting+r.adminPay+r.massage+r.rz+(r.products||0)+r.cleaning+r.salary+sick+holiday+vacation+cancTotal+bonus;
   const rrspEE=gross*0.06;
@@ -945,6 +1040,10 @@ function recalcTotals(uid, therapist){
   r.gross=gross; r.rrspEE=rrspEE; r.rrspER=rrspER; r.total=total;
   const subtotalEl=document.getElementById('subtotal-earned-'+uid);
   if(subtotalEl) subtotalEl.textContent=fmt(r.commission+(r.cancellation||0)+r.charting+r.adminPay+r.massage+(r.products||0)+r.cleaning+r.salary);
+  const totalCommEl=document.getElementById('total-commission-'+uid);
+  if(totalCommEl) totalCommEl.textContent=fmt((r.rz||0)+(r.products||0)+(r.cancellation||0));
+  const summaryCommEl=document.getElementById('summary-commission-'+uid);
+  if(summaryCommEl) summaryCommEl.textContent=fmt((r.rz||0)+(r.products||0)+(r.cancellation||0));
   const rates=THERAPIST_RATES[therapist];
   if(rates){
     const avg=calcAvgWage(rates)||1;
@@ -1156,6 +1255,14 @@ function refreshBreakdownTable(therapist, uid){
         html+=makeHeaderInner();
         html+=makeRowsInner(data.rz,'admin');
       }
+      {
+        const cancItems=data.cancellations||[];
+        html+=sectionHeader(`Cancellations (${cancItems.length} · $${sumItems(cancItems).toFixed(2)})`);
+        html+=`<tr><td colspan="7" style="font-size:11px;color:#185fa5;padding:3px 0 3px 8px">Commission: select the cancelled service type to set the rate</td></tr>`;
+        if(cancItems.length>0){ html+=makeCancellationHeader(); html+=makeCancellationRows(cancItems,uid,therapist,rates); }
+        else{ html+=`<tr><td colspan="16" style="color:#5f5e5a;font-size:11px;padding:4px 0 4px 8px">No cancellations this period</td></tr>`; }
+      }
+      html+=`<tr style="border-top:1px solid rgba(0,0,0,0.15);background:#fff8e1"><td colspan="10" style="font-size:12px;font-weight:600;padding:6px 0 6px 8px;color:#854f0b">Total Commission (RZ + Products + Cancellations)</td><td colspan="4" style="font-size:12px;font-weight:600;text-align:right;padding:6px 0;color:#854f0b" id="total-commission-${uid}">$0.00</td></tr>`;
       if(salary>0){
         html+=sectionHeader('Salary');
         html+=`<tr><td style="padding-left:8px">Per period</td><td>$${salary.toFixed(2)}</td></tr>`;
@@ -1181,7 +1288,7 @@ function refreshBreakdownTable(therapist, uid){
         const summaryRow=(label,rate,hrs,pay)=>`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)">
           <td colspan="7" style="font-size:12px;padding:4px 0 4px 8px;color:#1a1a18">${label}</td>
           <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5">${rate!==null?'$'+rate+'/hr':''}</td>
-          <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a">${hrs!==null?hrs+' hrs':''}</td>
+          <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a">${hrs!==null?hrs:''}</td>
           <td colspan="2" style="font-size:12px;text-align:right;font-weight:500">$${pay}</td>
         </tr>`;
         let sRows='';
@@ -1192,7 +1299,12 @@ function refreshBreakdownTable(therapist, uid){
         sRows+=summaryRow('45min Therapy',(rates.r45/45*60).toFixed(2),r45Hrs,r45Pay);
         sRows+=summaryRow('60-90min Therapy',(rates.r60/60*60).toFixed(2),r60r90Hrs,r60r90Pay);
         if(rates.massage>0) sRows+=summaryRow('Massage Therapy',(rates.massage).toFixed(2),massHrs,massPay);
-        sRows+=summaryRow('Commission (Product & RZ)',null,null,(sumItems(data.rz)+parseFloat(prodPay2)).toFixed(2));
+        sRows+=`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)">
+          <td colspan="7" style="font-size:12px;padding:4px 0 4px 8px;color:#1a1a18">Commission (Product & RZ & Cancellations)</td>
+          <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5"></td>
+          <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a"></td>
+          <td colspan="2" style="font-size:12px;text-align:right;font-weight:500" id="summary-commission-${uid}">$0.00</td>
+        </tr>`;
         if(salary>0) sRows+=summaryRow('Salary',(rates.salary?calcAvgWage(rates).toFixed(2):null),(rates.salary?(rates.salary/calcAvgWage(rates)).toFixed(2):null),salPay);
         return sRows;
       })();
@@ -1369,8 +1481,7 @@ function copyTherapistSummary(therapist, uid){
       body+=`No sessions this period\n`;
     } else {
       for(const i of items){
-        const svc=i.name.length>42?i.name.substring(0,42)+'...':i.name;
-        body+=`${i.date}  •  ${svc}  •  ${i.patient||''}\n`;
+        body+=`${i.date}  •  ${i.name}  •  ${i.patient||''}\n`;
       }
     }
     body+='\n';
@@ -1384,6 +1495,18 @@ function copyTherapistSummary(therapist, uid){
   addSection('90min Therapy', data.sessions.r90);
   addSection('Massage Therapy', data.massage);
   addSection('Products', data.products||[]);
+
+  const cancItems=data.cancellations||[];
+  body+=`CANCELLATIONS\n${'─'.repeat(60)}\n`;
+  if(cancItems.length===0){
+    body+=`No cancellations this period\n`;
+  } else {
+    for(const i of cancItems){
+      const priced=i.amount>0?`${i.serviceTypeLabel||''} — $${i.amount.toFixed(2)}`:'not yet priced';
+      body+=`${i.date}  •  ${i.name}  •  ${i.patient||''}  •  ${priced}\n`;
+    }
+  }
+  body+='\n';
 
   body+=`\nThank you,\nActiv Axion`;
 
@@ -1401,52 +1524,61 @@ function copyTherapistSummary(therapist, uid){
 }
 
 function buildTherapistSummaryRows(therapist,r,data,rates){
+  // Epsilon nudge avoids the classic binary-float miss where e.g. 10.005 is actually
+  // stored as 10.00499999999989... so plain toFixed(2) silently rounds it down to 10.00
+  // instead of 10.01. Applied to every dollar figure below so Hours x Rate reconciles
+  // with the displayed Amount instead of being off by a cent here and there.
+  const round2=(v)=>Math.round((v+1e-9)*100)/100;
   const n=(v)=>isNaN(v)||v===undefined||v===null?0:parseFloat(v)||0;
-  const fmt=(v)=>'$'+n(v).toFixed(2);
+  const fmt=(v)=>'$'+round2(n(v)).toFixed(2);
   const uid=therapist.replace(/\s+/g,'_');
   const notes=document.getElementById('notes-'+uid)?.value||'';
   const avg=n(calcAvgWage(rates))||1;
 
-  const adminHrs=parseFloat(data.admin.reduce((s,i)=>{const m=parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+parseFloat((m/60).toFixed(2));},0).toFixed(2));
-  const cleanHrs=parseFloat((data.treatmentDays.size*15/60).toFixed(2));
-  const adminCleanHrs=parseFloat((adminHrs+cleanHrs).toFixed(2));
-  const adminCleanPay=n(r.adminPay)+n(r.cleaning);
-  const rzPay=n(r.rz);
+  // Sum RAW (unrounded) minutes-to-hours per item, then round the total ONCE. Rounding
+  // each item to 2 decimals first and then rounding the sum again (the old behavior)
+  // compounds error across every line - with enough admin/massage entries in a period,
+  // the displayed Hours drifts from the true total, which is exactly why Hours x Rate
+  // stopped reconciling with the Amount column.
+  const adminHrs=round2(data.admin.reduce((s,i)=>{const m=parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0));
+  const cleanHrs=round2(data.treatmentDays.size*15/60);
+  const adminCleanHrs=round2(adminHrs+cleanHrs);
+  const adminCleanPay=round2(n(r.adminPay)+n(r.cleaning));
+  const rzPay=round2(n(r.rz));
 
   const chartTreat=data.chartingCount||0;
-  const chartHrs=parseFloat((chartTreat*10/60).toFixed(2));
-  const chartPay=n(r.charting);
+  const chartHrs=round2(chartTreat*10/60);
+  const chartPay=round2(n(r.charting));
 
-  const r15Hrs=parseFloat((data.sessions.r15.reduce((s,i)=>s+(i.mins||30)/60,0)).toFixed(2));
-  const r15Pay=data.sessions.r15.reduce((s,i)=>s+i.amount,0);
-  const r45Hrs=parseFloat((data.sessions.r45.length*45/60).toFixed(2));
-  const r45Pay=data.sessions.r45.reduce((s,i)=>s+i.amount,0);
-  const r60r90Hrs=parseFloat((data.sessions.r60.reduce((s,i)=>s+(i.mins||60)/60,0)+data.sessions.r90.reduce((s,i)=>s+(i.mins||90)/60,0)).toFixed(2));
-  const r60r90Pay=data.sessions.r60.reduce((s,i)=>s+i.amount,0)+data.sessions.r90.reduce((s,i)=>s+i.amount,0);
-  const massHrs=parseFloat(data.massage.reduce((s,i)=>{const m=i.massageMins||parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+parseFloat((m/60).toFixed(2));},0).toFixed(2));
-  const massPay=data.massage.reduce((s,i)=>s+i.amount,0);
-  const prodPay=n(r.products);
-  const salPay=n(r.salary);
-  const salHrs=salPay>0?parseFloat((salPay/avg).toFixed(2)):0;
+  const r15Hrs=round2(data.sessions.r15.reduce((s,i)=>s+(i.mins||30)/60,0));
+  const r15Pay=round2(data.sessions.r15.reduce((s,i)=>s+i.amount,0));
+  const r45Hrs=round2(data.sessions.r45.length*45/60);
+  const r45Pay=round2(data.sessions.r45.reduce((s,i)=>s+i.amount,0));
+  const r60r90Hrs=round2(data.sessions.r60.reduce((s,i)=>s+(i.mins||60)/60,0)+data.sessions.r90.reduce((s,i)=>s+(i.mins||90)/60,0));
+  const r60r90Pay=round2(data.sessions.r60.reduce((s,i)=>s+i.amount,0)+data.sessions.r90.reduce((s,i)=>s+i.amount,0));
+  const massHrs=round2(data.massage.reduce((s,i)=>{const m=i.massageMins||parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0));
+  const massPay=round2(data.massage.reduce((s,i)=>s+i.amount,0));
+  const prodPay=round2(n(r.products));
+  const cancPay=round2(n(r.cancellation));
+  const salPay=round2(n(r.salary));
+  const salHrs=salPay>0?round2(salPay/avg):0;
 
   const rows=[];
   rows.push([therapist]);
   rows.push(['Component','Rate','Hours','Amount']);
-  rows.push(['Admin & Cleaning', fmt(rates.admin)+'/hr', adminCleanHrs+' hrs', fmt(adminCleanPay)]);
-  rows.push(['Charting', fmt(rates.admin)+'/hr', chartHrs+' hrs', fmt(chartPay)]);
-  rows.push(['15-30min Therapy', fmt(rates.r30/30*60)+'/hr', r15Hrs+' hrs', fmt(r15Pay)]);
-  rows.push(['45min Therapy', fmt(rates.r45/45*60)+'/hr', r45Hrs+' hrs', fmt(r45Pay)]);
-  rows.push(['60-90min Therapy', fmt(rates.r60/60*60)+'/hr', r60r90Hrs+' hrs', fmt(r60r90Pay)]);
-  if(rates.massage>0) rows.push(['Massage Therapy', fmt(rates.massage)+'/hr', massHrs+' hrs', fmt(massPay)]);
-  rows.push(['Products Commission', '', '', fmt(prodPay)]);
-  if(rzPay>0) rows.push(['Recovery Zone Commission', '', '', fmt(rzPay)]);
-  rows.push(['Total Commissions', '', '', fmt(prodPay+rzPay)]);
-  if(salPay>0) rows.push(['Salary', fmt(avg)+'/hr', salHrs+' hrs', fmt(salPay)]);
-  rows.push(['Subtotal earned', '', '', fmt(n(r.commission)+n(r.charting)+n(r.adminPay)+n(r.massage)+n(r.products)+n(r.rz)+n(r.cleaning)+n(r.salary))]);
+  rows.push(['Admin & Cleaning', fmt(rates.admin)+'/hr', adminCleanHrs, fmt(adminCleanPay)]);
+  rows.push(['Charting', fmt(rates.admin)+'/hr', chartHrs, fmt(chartPay)]);
+  rows.push(['15-30min Therapy', fmt(rates.r30/30*60)+'/hr', r15Hrs, fmt(r15Pay)]);
+  rows.push(['45min Therapy', fmt(rates.r45/45*60)+'/hr', r45Hrs, fmt(r45Pay)]);
+  rows.push(['60-90min Therapy', fmt(rates.r60/60*60)+'/hr', r60r90Hrs, fmt(r60r90Pay)]);
+  if(rates.massage>0) rows.push(['Massage Therapy', fmt(rates.massage)+'/hr', massHrs, fmt(massPay)]);
+  rows.push(['Total Commission', '', '', fmt(prodPay+rzPay+cancPay)]);
+  if(salPay>0) rows.push(['Salary', fmt(avg)+'/hr', salHrs, fmt(salPay)]);
+  rows.push(['Subtotal earned', '', '', fmt(n(r.commission)+n(r.charting)+n(r.adminPay)+n(r.massage)+n(r.products)+n(r.rz)+n(r.cancellation)+n(r.cleaning)+n(r.salary))]);
   rows.push([]);
-  rows.push(['Sick/Personal Pay', fmt(avg)+'/hr', n(r.sick)>0?parseFloat((n(r.sick)/avg).toFixed(2))+' hrs':'0.00 hrs', fmt(r.sick)]);
-  rows.push(['Holiday Pay', fmt(avg)+'/hr', n(r.holiday)>0?parseFloat((n(r.holiday)/avg).toFixed(2))+' hrs':'0.00 hrs', fmt(r.holiday)]);
-  rows.push(['Vacation Pay', fmt(avg)+'/hr', n(r.vacation)>0?parseFloat((n(r.vacation)/avg).toFixed(2))+' hrs':'0.00 hrs', fmt(r.vacation)]);
+  rows.push(['Sick/Personal Pay', fmt(avg)+'/hr', n(r.sick)>0?round2(n(r.sick)/avg):'0.00', fmt(r.sick)]);
+  rows.push(['Holiday Pay', fmt(avg)+'/hr', n(r.holiday)>0?round2(n(r.holiday)/avg):'0.00', fmt(r.holiday)]);
+  rows.push(['Vacation Pay', fmt(avg)+'/hr', n(r.vacation)>0?round2(n(r.vacation)/avg):'0.00', fmt(r.vacation)]);
   rows.push(['Gross Payroll', '', '', fmt(r.gross)]);
   rows.push(['RRSP EE (6%)', '', '', fmt(r.rrspEE)]);
   rows.push(['RRSP ER (3%)', '', '', fmt(r.rrspER)]);
@@ -1509,8 +1641,15 @@ function buildTherapistDetailRows(therapist,data){
   addSection('90min Sessions',data.sessions.r90);
   addSection('Massage Therapy',data.massage);
   addSection('Products',data.products||[]);
+  const cancItems=data.cancellations||[];
+  if(cancItems.length>0){
+    rows.push(['Cancellations']);
+    rows.push(['Invoice #','Invoice Date','Line Item Name','Date','Patient Name','Cancelled Service Type','Commission']);
+    for(const i of cancItems) rows.push([i.invoice,i.invoiceDate,i.name,i.date,i.patient||'',i.serviceTypeLabel||'(not priced)',i.amount||0]);
+    rows.push([]);
+  }
   if(data.flags&&data.flags.length>0){
-    rows.push(['Flagged (cancellations / unknown — review manually)']);
+    rows.push(['Flagged (unrecognized — review manually)']);
     rows.push(['Invoice #','Date','Patient Name','Line Item Name','Total incl. tax']);
     for(const f of data.flags) rows.push([f.invoice||'',f.date,f.patient||'',f.name,f.totalWithTax]);
     rows.push([]);
