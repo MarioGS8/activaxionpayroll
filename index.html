@@ -1679,7 +1679,10 @@ function buildTherapistSummaryRows(therapist,r,data,rates){
   // with the displayed Amount instead of being off by a cent here and there.
   const round2=(v)=>Math.round((v+1e-9)*100)/100;
   const n=(v)=>isNaN(v)||v===undefined||v===null?0:parseFloat(v)||0;
-  const fmt=(v)=>'$'+round2(n(v)).toFixed(2);
+  // Returns a real number, not a "$X.XX" string — a string cell reads as text in
+  // Sheets/Excel, so any SUM() over these cells silently comes back 0. Format the
+  // column as currency in Sheets (Format > Number > Currency) if you want the $ back.
+  const fmt=(v)=>round2(n(v));
   const uid=therapist.replace(/\s+/g,'_');
   const notes=document.getElementById('notes-'+uid)?.value||'';
   const avg=n(calcAvgWage(rates))||1;
