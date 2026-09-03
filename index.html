@@ -152,8 +152,7 @@
   <button class="run-btn" id="run-btn" disabled>Calculate payroll</button>
   <div class="error-msg" id="error-msg" style="display:none"></div>
   <div class="results" id="results"></div>
-  <button class="download-btn" id="download-btns" style="display:none" onclick="downloadExcel()">⬇ Download Excel for bookkeeper</button>
-  <button class="download-btn" id="download-backup-btn" style="display:none;background:#185fa5;margin-top:0.5rem" onclick="downloadFullBackup()">⬇ Download full backup (every line, all therapists)</button>
+  <button class="download-btn" id="download-backup-btn" style="display:none" onclick="downloadFullBackup()">⬇ Download full backup (every line, all therapists)</button>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -913,10 +912,28 @@ function calculate(){
               rows+=summaryRow('60-90min Therapy',(rates.r60/60*60).toFixed(2),r60r90Hrs,r60r90Pay);
               if(rates.massage>0) rows+=summaryRow('Massage Therapy',(rates.massage).toFixed(2),massHrs,massPay);
               rows+=`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)">
-                <td colspan="7" style="font-size:12px;padding:4px 0 4px 8px;color:#1a1a18">Commission (Product & RZ & Cancellations)</td>
+                <td colspan="7" style="font-size:12px;padding:4px 0 4px 8px 16px;color:#1a1a18">Recovery Zone</td>
                 <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5"></td>
                 <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a"></td>
-                <td colspan="2" style="font-size:12px;text-align:right;font-weight:500" id="summary-commission-${uid}">$0.00</td>
+                <td colspan="2" style="font-size:12px;text-align:right;font-weight:500" id="summary-rz-${uid}">$0.00</td>
+              </tr>`;
+              rows+=`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)">
+                <td colspan="7" style="font-size:12px;padding:4px 0 4px 8px 16px;color:#1a1a18">Products (10%)</td>
+                <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5"></td>
+                <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a"></td>
+                <td colspan="2" style="font-size:12px;text-align:right;font-weight:500" id="summary-products-${uid}">$0.00</td>
+              </tr>`;
+              rows+=`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)">
+                <td colspan="7" style="font-size:12px;padding:4px 0 4px 8px 16px;color:#1a1a18">Cancellations / No-shows</td>
+                <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5"></td>
+                <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a"></td>
+                <td colspan="2" style="font-size:12px;text-align:right;font-weight:500" id="summary-cancellation-${uid}">$0.00</td>
+              </tr>`;
+              rows+=`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05);background:#f5f5f3">
+                <td colspan="7" style="font-size:12px;font-weight:600;padding:4px 0 4px 8px;color:#1a1a18">Total Commission</td>
+                <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5"></td>
+                <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a"></td>
+                <td colspan="2" style="font-size:12px;text-align:right;font-weight:600" id="summary-commission-${uid}">$0.00</td>
               </tr>`;
               if(salary>0) rows+=summaryRow('Salary',(rates.salary?calcAvgWage(rates).toFixed(2):null),(rates.salary?(rates.salary/calcAvgWage(rates)).toFixed(2):null),salPay);
               return rows;
@@ -952,11 +969,11 @@ function calculate(){
               <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="vacation-hrs-${uid}">0.00 hrs</td>
             </tr>
             <tr class="total-row"><td>Gross Payroll</td><td id="gross-row-${uid}">$0.00</td></tr>
+            <tr class="section-header"><td colspan="2">Bonus (included in RRSP base)</td></tr>
+            <tr class="bonus-row"><td>Bonus</td><td><input type="number" class="manual-input" min="0" step="0.01" value="0" id="bonus-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="background:#faeeda"></td></tr>
             <tr class="section-header"><td colspan="2">RRSP</td></tr>
             <tr class="rrsp-row"><td>RRSP EE (6%)</td><td id="rrsp-ee-${uid}">$0.00</td></tr>
             <tr class="rrsp-row"><td>RRSP ER (3%)</td><td id="rrsp-er-${uid}">$0.00</td></tr>
-            <tr class="section-header"><td colspan="2">Bonus (included in RRSP base)</td></tr>
-            <tr class="bonus-row"><td>Bonus</td><td><input type="number" class="manual-input" min="0" step="0.01" value="0" id="bonus-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="background:#faeeda"></td></tr>
             <tr class="grand-total-row"><td>Total Payroll</td><td id="total-${uid}">$0.00</td></tr>
           </tbody>
         </table>
@@ -1058,7 +1075,6 @@ function calculate(){
         <textarea class="notes-area" id="notes-${uid}" placeholder="Add any notes for your bookkeeper..."></textarea>
       </div>
       <div style="margin-top:0.75rem;display:flex;gap:8px">
-        <button onclick="downloadTherapistSummary('${therapist}')" style="padding:8px 16px;background:#185fa5;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer;flex:1">⬇ Download summary</button>
         <button onclick="copyTherapistSummary('${therapist}','${uid}')" id="copy-btn-${uid}" style="padding:8px 16px;background:#0f6e56;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer;flex:1">📋 Copy summary text</button>
       </div>
       </div>`;
@@ -1066,7 +1082,6 @@ function calculate(){
     recalcTotals(uid,therapist);
   }
 
-  document.getElementById('download-btns').style.display='block';
   document.getElementById('download-backup-btn').style.display='block';
 }
 
@@ -1117,6 +1132,12 @@ function recalcTotals(uid, therapist){
   if(subtotalEl) subtotalEl.textContent=fmt(r.commission+(r.cancellation||0)+r.charting+r.adminPay+r.massage+(r.rz||0)+(r.products||0)+r.cleaning+r.salary);
   const totalCommEl=document.getElementById('total-commission-'+uid);
   if(totalCommEl) totalCommEl.textContent=fmt((r.rz||0)+(r.products||0)+(r.cancellation||0));
+  const summaryRzEl=document.getElementById('summary-rz-'+uid);
+  if(summaryRzEl) summaryRzEl.textContent=fmt(r.rz||0);
+  const summaryProductsEl=document.getElementById('summary-products-'+uid);
+  if(summaryProductsEl) summaryProductsEl.textContent=fmt(r.products||0);
+  const summaryCancellationEl=document.getElementById('summary-cancellation-'+uid);
+  if(summaryCancellationEl) summaryCancellationEl.textContent=fmt(r.cancellation||0);
   const summaryCommEl=document.getElementById('summary-commission-'+uid);
   if(summaryCommEl) summaryCommEl.textContent=fmt((r.rz||0)+(r.products||0)+(r.cancellation||0));
   const rates=THERAPIST_RATES[therapist];
@@ -1387,10 +1408,28 @@ function refreshBreakdownTable(therapist, uid){
         sRows+=summaryRow('60-90min Therapy',(rates.r60/60*60).toFixed(2),r60r90Hrs,r60r90Pay);
         if(rates.massage>0) sRows+=summaryRow('Massage Therapy',(rates.massage).toFixed(2),massHrs,massPay);
         sRows+=`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)">
-          <td colspan="7" style="font-size:12px;padding:4px 0 4px 8px;color:#1a1a18">Commission (Product & RZ & Cancellations)</td>
+          <td colspan="7" style="font-size:12px;padding:4px 0 4px 8px 16px;color:#1a1a18">Recovery Zone</td>
           <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5"></td>
           <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a"></td>
-          <td colspan="2" style="font-size:12px;text-align:right;font-weight:500" id="summary-commission-${uid}">$0.00</td>
+          <td colspan="2" style="font-size:12px;text-align:right;font-weight:500" id="summary-rz-${uid}">$0.00</td>
+        </tr>`;
+        sRows+=`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)">
+          <td colspan="7" style="font-size:12px;padding:4px 0 4px 8px 16px;color:#1a1a18">Products (10%)</td>
+          <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5"></td>
+          <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a"></td>
+          <td colspan="2" style="font-size:12px;text-align:right;font-weight:500" id="summary-products-${uid}">$0.00</td>
+        </tr>`;
+        sRows+=`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)">
+          <td colspan="7" style="font-size:12px;padding:4px 0 4px 8px 16px;color:#1a1a18">Cancellations / No-shows</td>
+          <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5"></td>
+          <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a"></td>
+          <td colspan="2" style="font-size:12px;text-align:right;font-weight:500" id="summary-cancellation-${uid}">$0.00</td>
+        </tr>`;
+        sRows+=`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05);background:#f5f5f3">
+          <td colspan="7" style="font-size:12px;font-weight:600;padding:4px 0 4px 8px;color:#1a1a18">Total Commission</td>
+          <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5"></td>
+          <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a"></td>
+          <td colspan="2" style="font-size:12px;text-align:right;font-weight:600" id="summary-commission-${uid}">$0.00</td>
         </tr>`;
         if(salary>0) sRows+=summaryRow('Salary',(rates.salary?calcAvgWage(rates).toFixed(2):null),(rates.salary?(rates.salary/calcAvgWage(rates)).toFixed(2):null),salPay);
         return sRows;
@@ -1429,11 +1468,11 @@ function refreshBreakdownTable(therapist, uid){
           <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="vacation-hrs-${uid}">0.00 hrs</td>
         </tr>
         <tr class="total-row"><td>Gross Payroll</td><td id="gross-row-${uid}">$0.00</td></tr>
+        <tr class="section-header"><td colspan="15">Bonus (included in RRSP base)</td></tr>
+        <tr class="bonus-row"><td>Bonus</td><td><input type="number" class="manual-input" min="0" step="0.01" value="${savedBonus}" id="bonus-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="background:#faeeda"></td></tr>
         <tr class="section-header"><td colspan="15">RRSP</td></tr>
         <tr class="rrsp-row"><td>RRSP EE (6%)</td><td id="rrsp-ee-${uid}">$0.00</td></tr>
         <tr class="rrsp-row"><td>RRSP ER (3%)</td><td id="rrsp-er-${uid}">$0.00</td></tr>
-        <tr class="section-header"><td colspan="15">Bonus (included in RRSP base)</td></tr>
-        <tr class="bonus-row"><td>Bonus</td><td><input type="number" class="manual-input" min="0" step="0.01" value="${savedBonus}" id="bonus-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="background:#faeeda"></td></tr>
         <tr class="grand-total-row"><td>Total Payroll</td><td id="total-${uid}">$0.00</td></tr>`;
 
       tbody.innerHTML=html;
@@ -1674,53 +1713,40 @@ function buildTherapistSummaryRows(therapist,r,data,rates){
   const salHrs=salPay>0?round2(salPay/avg):0;
 
   const rows=[];
-  rows.push([therapist]);
-  rows.push(['Component','Rate','Hours','Amount']);
-  rows.push(['Admin & Cleaning', fmt(rates.admin)+'/hr', adminCleanHrs, fmt(adminCleanPay)]);
-  rows.push(['Charting', fmt(rates.admin)+'/hr', chartHrs, fmt(chartPay)]);
-  rows.push(['15-30min Therapy', fmt(rates.r30/30*60)+'/hr', r15Hrs, fmt(r15Pay)]);
-  rows.push(['45min Therapy', fmt(rates.r45/45*60)+'/hr', r45Hrs, fmt(r45Pay)]);
-  rows.push(['60-90min Therapy', fmt(rates.r60/60*60)+'/hr', r60r90Hrs, fmt(r60r90Pay)]);
-  if(rates.massage>0) rows.push(['Massage Therapy', fmt(rates.massage)+'/hr', massHrs, fmt(massPay)]);
+  rows.push(['═'.repeat(48)]);
+  rows.push([therapist.toUpperCase()]);
+  rows.push(['═'.repeat(48)]);
+  rows.push(['Component','Rate (/hr)','Hours','Amount']);
+  rows.push(['Admin & Cleaning', fmt(rates.admin), adminCleanHrs, fmt(adminCleanPay)]);
+  rows.push(['Charting', fmt(rates.admin), chartHrs, fmt(chartPay)]);
+  rows.push(['15-30min Therapy', fmt(rates.r30/30*60), r15Hrs, fmt(r15Pay)]);
+  rows.push(['45min Therapy', fmt(rates.r45/45*60), r45Hrs, fmt(r45Pay)]);
+  rows.push(['60-90min Therapy', fmt(rates.r60/60*60), r60r90Hrs, fmt(r60r90Pay)]);
+  if(rates.massage>0) rows.push(['Massage Therapy', fmt(rates.massage), massHrs, fmt(massPay)]);
+  rows.push(['  Recovery Zone', '', '', fmt(rzPay)]);
+  rows.push(['  Products (10%)', '', '', fmt(prodPay)]);
+  rows.push(['  Cancellations / No-shows', '', '', fmt(cancPay)]);
   rows.push(['Total Commission', '', '', fmt(prodPay+rzPay+cancPay)]);
-  if(salPay>0) rows.push(['Salary', fmt(avg)+'/hr', salHrs, fmt(salPay)]);
+  if(salPay>0) rows.push(['Salary', fmt(avg), salHrs, fmt(salPay)]);
   rows.push(['Subtotal earned', '', '', fmt(n(r.commission)+n(r.charting)+n(r.adminPay)+n(r.massage)+n(r.products)+n(r.rz)+n(r.cancellation)+n(r.cleaning)+n(r.salary))]);
   rows.push([]);
-  rows.push(['Sick/Personal Pay', fmt(avg)+'/hr', n(r.sick)>0?round2(n(r.sick)/avg):'0.00', fmt(r.sick)]);
-  rows.push(['Holiday Pay', fmt(avg)+'/hr', n(r.holiday)>0?round2(n(r.holiday)/avg):'0.00', fmt(r.holiday)]);
-  rows.push(['Vacation Pay', fmt(avg)+'/hr', n(r.vacation)>0?round2(n(r.vacation)/avg):'0.00', fmt(r.vacation)]);
+  rows.push(['Sick/Personal Pay', fmt(avg), n(r.sick)>0?round2(n(r.sick)/avg):'0.00', fmt(r.sick)]);
+  rows.push(['Holiday Pay', fmt(avg), n(r.holiday)>0?round2(n(r.holiday)/avg):'0.00', fmt(r.holiday)]);
+  rows.push(['Vacation Pay', fmt(avg), n(r.vacation)>0?round2(n(r.vacation)/avg):'0.00', fmt(r.vacation)]);
   rows.push(['Gross Payroll', '', '', fmt(r.gross)]);
+  rows.push(['Bonus (incl. in RRSP base)', '', '', fmt(r.bonus)]);
   rows.push(['RRSP EE (6%)', '', '', fmt(r.rrspEE)]);
   rows.push(['RRSP ER (3%)', '', '', fmt(r.rrspER)]);
-  rows.push(['Bonus (incl. in RRSP base)', '', '', fmt(r.bonus)]);
   rows.push(['Total Payroll', '', '', fmt(r.total)]);
   if(notes) rows.push(['Notes', notes]);
   return rows;
 }
 
-function downloadExcel(){
-  const wb=XLSX.utils.book_new();
-  const rows=[];
-
-  for(const[therapist,r]of Object.entries(lastResults)){
-    const data=lastTherapistData[therapist];
-    const rates=THERAPIST_RATES[therapist];
-    if(!data||!rates) continue;
-    rows.push(...buildTherapistSummaryRows(therapist,r,data,rates));
-    rows.push([]);
-    rows.push([]);
-  }
-
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:25},{wch:14},{wch:12},{wch:14}];
-  const sheetName=`${periodStart} to ${periodEnd}`.substring(0,31);
-  XLSX.utils.book_append_sheet(wb,ws,sheetName);
-  XLSX.writeFile(wb,`Payroll_${periodStart}_to_${periodEnd}.xlsx`);
-}
-
 function buildTherapistDetailRows(therapist,data){
   const rows=[
-    [`${therapist} — Full Detail ${periodStart} to ${periodEnd}`],
+    ['═'.repeat(48)],
+    [(therapist+' — Full Detail '+periodStart+' to '+periodEnd).toUpperCase()],
+    ['═'.repeat(48)],
     [],
   ];
   const HEADERS=['Invoice #','Invoice Date','Line Item Name','Service Time','Service Date','Qty','Patient Name'];
@@ -1729,6 +1755,12 @@ function buildTherapistDetailRows(therapist,data){
     rows.push([label]);
     rows.push(HEADERS);
     for(const i of items) rows.push([i.invoice,i.invoiceDate,i.name,i.serviceTime,i.date,i.quantity,i.patient||'']);
+    // Totals row so this matches 1:1 against the Hours/Amount figures in the summary
+    // block at the bottom of the sheet - sums the same Service Time and Qty columns
+    // the rows above just listed, nothing derived or recalculated.
+    const timeTotal=items.reduce((s,i)=>s+(parseFloat(i.serviceTime)||0),0);
+    const qtyTotal=items.reduce((s,i)=>s+(parseFloat(i.quantity)||0),0);
+    rows.push(['','TOTAL','',timeTotal,'',qtyTotal,'']);
     rows.push([]);
   };
   addSection('Admin Hours',data.admin);
@@ -1767,33 +1799,37 @@ function buildTherapistDetailRows(therapist,data){
   return rows;
 }
 
-function downloadTherapistSummary(therapist){
-  const r=lastResults[therapist];
-  if(!r) return;
-  const data=lastTherapistData[therapist];
-  if(!data) return;
-  const rates=THERAPIST_RATES[therapist];
-  const wb=XLSX.utils.book_new();
-  const rows=buildTherapistDetailRows(therapist,data);
-  rows.push([]);
-  if(rates) rows.push(...buildTherapistSummaryRows(therapist,r,data,rates));
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:12},{wch:14},{wch:50},{wch:12},{wch:14},{wch:6},{wch:25}];
-  XLSX.utils.book_append_sheet(wb,ws,'Summary');
-  XLSX.writeFile(wb,`${therapist.replace(/\s+/g,'_')}_Summary_${periodStart}_to_${periodEnd}.xlsx`);
-}
-
 function downloadFullBackup(){
   const wb=XLSX.utils.book_new();
   const overviewRows=[];
   const usedNames=new Set();
+
+  // Row indices (within each sheet's aoa) that hold a therapist's bold/large name banner,
+  // so we can apply cell styling after the sheet is built from the array-of-arrays.
+  const boldNameRows=(rowsArr)=>{
+    const idxs=[];
+    rowsArr.forEach((row,idx)=>{ if(row.length===1 && typeof row[0]==='string' && /^[A-Z0-9 ═()\-—.,]+$/.test(row[0]) && row[0].replace(/═/g,'').trim().length>0 && idx>0 && rowsArr[idx-1] && rowsArr[idx-1][0] && String(rowsArr[idx-1][0]).startsWith('═')) idxs.push(idx); });
+    return idxs;
+  };
+  const applyNameStyle=(ws,rowsArr)=>{
+    // NOTE: the community build of SheetJS (xlsx.full.min.js) does not reliably persist
+    // cell styles on write — this is a best-effort attempt. The literal ═ separator lines
+    // above/below the name are the part guaranteed to show up regardless.
+    for(const idx of boldNameRows(rowsArr)){
+      const ref='A'+(idx+1);
+      if(!ws[ref]) continue;
+      ws[ref].s={font:{bold:true,sz:14}};
+    }
+  };
 
   for(const[therapist,r]of Object.entries(lastResults)){
     const data=lastTherapistData[therapist];
     const rates=THERAPIST_RATES[therapist];
     if(!data||!rates) continue;
 
-    overviewRows.push(...buildTherapistSummaryRows(therapist,r,data,rates));
+    const summaryRows=buildTherapistSummaryRows(therapist,r,data,rates);
+    const startIdx=overviewRows.length;
+    overviewRows.push(...summaryRows);
     overviewRows.push([]);
     overviewRows.push([]);
 
@@ -1802,6 +1838,7 @@ function downloadFullBackup(){
     detailRows.push(...buildTherapistSummaryRows(therapist,r,data,rates));
     const detailWs=XLSX.utils.aoa_to_sheet(detailRows);
     detailWs['!cols']=[{wch:12},{wch:14},{wch:50},{wch:12},{wch:14},{wch:6},{wch:25}];
+    applyNameStyle(detailWs,detailRows);
 
     let sheetName=therapist.replace(/[\\/*?:\[\]]/g,'').substring(0,31);
     let finalName=sheetName;
@@ -1814,6 +1851,7 @@ function downloadFullBackup(){
 
   const overviewWs=XLSX.utils.aoa_to_sheet(overviewRows);
   overviewWs['!cols']=[{wch:25},{wch:14},{wch:12},{wch:14}];
+  applyNameStyle(overviewWs,overviewRows);
   XLSX.utils.book_append_sheet(wb,overviewWs,'Overview');
   wb.SheetNames.unshift(wb.SheetNames.pop());
 
