@@ -320,12 +320,6 @@ function classifyAndEarn(cat,name,subtotal,rates,productCat,serviceTime){
   if(productCat) return {commission:subtotal*0.10,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Product (10%)'};
   if(isProduct(cat,name)) return {commission:subtotal*0.10,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Product (10%)'};
   if(isRecoveryZone(cat)){
-    // Was keying off whether the name literally said "RLT"/"red light" - but Noterro
-    // exports use other abbreviations for the same 15min service (e.g. "(RR)" for
-    // Recovery Room), which silently fell through to the 30min+ rate. The section is
-    // labeled "flat rate ($6/$12)" by duration, so duration is what should decide it -
-    // prefer the actual Service Time column, fall back to parsing the name only if that's
-    // missing, and default to 15min (matches the previous fallback for a bare RZ line).
     const mins=serviceTime||parseDuration(name)||15;
     if(mins<=15) return {commission:0,charting:0,admin:0,massage:0,rz:rates.rz15??6,isTreat:false,label:'RZ 15min'};
     return {commission:0,charting:0,admin:0,massage:0,rz:rates.rz30??12,isTreat:false,label:'RZ 30min+'};
@@ -367,9 +361,6 @@ function makeMassageHeader(){
   const hdrs=['Invoice #','Invoice Date','Service Category','Line Item Name','Service Time','Duration','Service Date','Qty','Practitioner','Discount Name','Disc Amt','Subtotal','Tax','Total','Balance','Patient Name','Move to'];
   return '<tr style="border-bottom:0.5px solid rgba(0,0,0,0.15)">'+hdrs.map(h=>'<th style="font-size:11px;color:#5f5e5a;font-weight:500;padding:4px 8px 6px 0;white-space:nowrap">'+h+'</th>').join('')+'</tr>';
 }
-// Cancellation fees stay under Commission (alongside RZ and Products) rather than being
-// reclassified into a treatment-duration bucket - they're commission earned on a session
-// that didn't happen, priced by picking which duration/service it would have been.
 function makeCancellationHeader(){
   const hdrs=['Invoice #','Invoice Date','Service Category','Line Item Name','Service Date','Qty','Practitioner','Discount Name','Disc Amt','Subtotal','Tax','Total (incl. tax)','Balance','Patient Name','Cancelled Service Type','Commission'];
   return '<tr style="border-bottom:0.5px solid rgba(0,0,0,0.15)">'+hdrs.map(h=>'<th style="font-size:11px;color:#5f5e5a;font-weight:500;padding:4px 8px 6px 0;white-space:nowrap">'+h+'</th>').join('')+'</tr>';
@@ -427,11 +418,6 @@ function updateCancellationType(therapist,uid,invoiceNum,selectEl){
   if(amtEl) amtEl.textContent='$'+item.amount.toFixed(2);
   recalcTotals(uid,therapist);
 }
-// Recovery Zone is a flat-fee section (not rate x duration), so each line gets a direct
-// dollar box instead of a duration box - lets the therapist's actual $6/$12 be overridden
-// per line without touching the global rate. Keeps the standard "Move to" dropdown too,
-// tagged 'admin' like the rest of the RZ plumbing (moveRow's 'admin' branch already
-// filters both data.admin and data.rz, since RZ rows have always shared that tag).
 function makeRecoveryZoneHeader(){
   const hdrs=['Invoice #','Invoice Date','Service Category','Line Item Name','Service Time','Service Date','Qty','Practitioner','Discount Name','Disc Amt','Subtotal','Tax','Total','Balance','Patient Name','Commission ($)','Move to'];
   return '<tr style="border-bottom:0.5px solid rgba(0,0,0,0.15)">'+hdrs.map(h=>'<th style="font-size:11px;color:#5f5e5a;font-weight:500;padding:4px 8px 6px 0;white-space:nowrap">'+h+'</th>').join('')+'</tr>';
@@ -490,13 +476,6 @@ function updateRecoveryZoneAmount(therapist,uid,invoiceNum,newVal){
   if(rzTotalEl) rzTotalEl.textContent='$'+rzSum.toFixed(2);
   recalcTotals(uid,therapist);
 }
-// Shared by Admin and Massage rows in BOTH the initial and refresh renders (same function,
-// same call signature, everywhere) - specifically to avoid the class of bug where two
-// separate copies of "the same" row renderer silently drift apart (one gets an edit box,
-// the other doesn't). sectionType is 'admin' or 'massage': both are priced as a continuous
-// rate x (minutes/60), so both get an editable duration box - unlike flat-fee items (RZ)
-// or flat-per-session-bucket items (15/30/45/60/90min treatments), which don't need one
-// since "Move to" already handles reclassifying those correctly.
 function makeEditableDurationRows(items,uid,therapist,rate,sectionType){
   const cs='style="color:#5f5e5a;font-size:11px;white-space:nowrap;padding:4px 8px 4px 0"';
   const SECTION_OPTIONS=[
@@ -543,7 +522,6 @@ function makeEditableDurationRows(items,uid,therapist,rate,sectionType){
       +'</tr>';
   }).join('');
 }
-// Kept as a thin wrapper so existing call sites don't need to change.
 function makeMassageRows(items,uid,therapist,rates){
   return makeEditableDurationRows(items,uid,therapist,rates.massage,'massage');
 }
@@ -672,11 +650,6 @@ function calculate(){
     const invoiceDate=(row['Invoice Date']||'').split(' ')[0];
     const invoiceNum=(row['Invoice #']||'').trim();
     const balance=parseFloat(row['Balance'])||0;
-    // Built here (before the cancellation/flag branches) so a cancellation gets the same
-    // full invoice detail as a normal line item, not the stripped-down {date,name,
-    // totalWithTax,invoice,patient} that the generic review-flag path uses. Cancellations
-    // are priced via a dropdown (like moving a session between duration buckets), so they
-    // need every column the standard row renderer expects.
     const rawEntry={
       invoice:invoiceNum,
       invoiceDate:(row['Invoice Date']||'').split(' ')[0],
@@ -696,8 +669,6 @@ function calculate(){
       amount:0
     };
     if(earn.label==='Cancellation'){
-      // Starts at amount:0 (unpriced) until the therapist picks a service type in the
-      // Cancellations section; recalcTotals() sums whatever's been priced so far.
       rawEntry.totalWithTax=totalWithTax;
       d.cancellations.push(rawEntry);
       continue;
@@ -1125,9 +1096,6 @@ function recalcTotals(uid, therapist){
   document.getElementById('total-'+uid).textContent=fmt(total);
   r.gross=gross; r.rrspEE=rrspEE; r.rrspER=rrspER; r.total=total;
   const subtotalEl=document.getElementById('subtotal-earned-'+uid);
-  // r.rz was missing here, so "Subtotal earned" came out lower than the Commission row
-  // printed directly above it. Gross was always right (it adds r.rz separately) - this was
-  // display-only, but it made the card fail to reconcile against itself.
   if(subtotalEl) subtotalEl.textContent=fmt(r.commission+(r.cancellation||0)+r.charting+r.adminPay+r.massage+(r.rz||0)+(r.products||0)+r.cleaning+r.salary);
   const totalCommEl=document.getElementById('total-commission-'+uid);
   if(totalCommEl) totalCommEl.textContent=fmt((r.rz||0)+(r.products||0)+(r.cancellation||0));
@@ -1170,11 +1138,6 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
     data.sessions[fromSection] = data.sessions[fromSection].filter(i=>i.invoice!==item.invoice);
   }
 
-  // chartingCount is set once in calculate() and drives the charting DOLLARS, while the
-  // section header and summary hours used to count data.sessions live. Moving a row
-  // between sections changed one and not the other, so the label read "26 treatments"
-  // while the amount still paid for 23. Keep it in step here; 'delete' correctly falls
-  // through as a non-session target and just decrements.
   const SESSION_SOURCES={r15:1,r45:1,r60:1,r90:1};
   const SESSION_TARGETS={r15_15:1,r15_30:1,r45:1,r60:1,r90:1};
   data.chartingCount = (data.chartingCount||0)
@@ -1348,8 +1311,6 @@ function refreshBreakdownTable(therapist, uid){
         }
       }
       if(data.massage.length>0){
-        // Was makeHeaderInner() (16 cols) above makeMassageRows() (17 cols, extra Duration
-        // box) - the massage table's columns shifted one to the left after any Move.
         html+=`<tr class="section-header"><td colspan="17">Massage Therapy (${data.massage.length} · $${sumItems(data.massage).toFixed(2)})</td></tr>`;
         html+=makeMassageHeader();
         html+=makeMassageRows(data.massage,uid,therapist,rates);
@@ -1444,9 +1405,6 @@ function refreshBreakdownTable(therapist, uid){
         ).toFixed(2)} hrs total</td>
         <td colspan="2" style="font-size:13px;font-weight:600;text-align:right;padding:8px 0;color:#0f6e56" id="subtotal-earned-${uid}">$0.00</td>
       </tr>`;
-      // Rebuilt to match the initial render exactly (rate column, hrs readout, colspans).
-      // The old refresh markup dropped the @rate/hrs cells, so the manual-entry block
-      // silently changed shape the first time you moved a row.
       html+=`<tr class="section-header"><td colspan="14">Manual entries</td></tr>
         <tr>
           <td colspan="5">Sick / Personal Pay</td>
@@ -1499,8 +1457,6 @@ function updateManualValueLabel(uid){
   } else if(section==='rz15'||section==='rz30'){
     label.textContent='(flat rate — no input needed)';
     input.value=''; input.disabled=true;
-  // The select emits r15_15 / r15_30, never a bare 'r15', so those two fell through to
-  // the else branch and showed an enabled "Minutes" box whose value was then ignored.
   } else if(['r15_15','r15_30','r45','r60','r90'].includes(section)){
     label.textContent='(fixed duration rate — no input needed)';
     input.value=''; input.disabled=true;
@@ -1671,25 +1627,13 @@ function copyTherapistSummary(therapist, uid){
 }
 
 function buildTherapistSummaryRows(therapist,r,data,rates){
-  // Epsilon nudge avoids the classic binary-float miss where e.g. 10.005 is actually
-  // stored as 10.00499999999989... so plain toFixed(2) silently rounds it down to 10.00
-  // instead of 10.01. Applied to every dollar figure below so Hours x Rate reconciles
-  // with the displayed Amount instead of being off by a cent here and there.
   const round2=(v)=>Math.round((v+1e-9)*100)/100;
   const n=(v)=>isNaN(v)||v===undefined||v===null?0:parseFloat(v)||0;
-  // Returns a real number, not a "$X.XX" string — a string cell reads as text in
-  // Sheets/Excel, so any SUM() over these cells silently comes back 0. Format the
-  // column as currency in Sheets (Format > Number > Currency) if you want the $ back.
   const fmt=(v)=>round2(n(v));
   const uid=therapist.replace(/\s+/g,'_');
   const notes=document.getElementById('notes-'+uid)?.value||'';
   const avg=n(calcAvgWage(rates))||1;
 
-  // Sum RAW (unrounded) minutes-to-hours per item, then round the total ONCE. Rounding
-  // each item to 2 decimals first and then rounding the sum again (the old behavior)
-  // compounds error across every line - with enough admin/massage entries in a period,
-  // the displayed Hours drifts from the true total, which is exactly why Hours x Rate
-  // stopped reconciling with the Amount column.
   const adminHrs=round2(data.admin.reduce((s,i)=>{const m=parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0));
   const cleanHrs=round2(data.treatmentDays.size*15/60);
   const adminCleanHrs=round2(adminHrs+cleanHrs);
@@ -1745,20 +1689,21 @@ function buildTherapistSummaryRows(therapist,r,data,rates){
 
 function buildTherapistDetailRows(therapist,data){
   const rows=[
-    ['═'.repeat(48)],
-    [(therapist+' — Full Detail '+periodStart+' to '+periodEnd).toUpperCase()],
+    ['PAYROLL SUMMARY'],
+    [`${therapist}  |  ${periodStart} to ${periodEnd}`],
     ['═'.repeat(48)],
     [],
   ];
   const HEADERS=['Invoice #','Invoice Date','Line Item Name','Service Time','Service Date','Qty','Patient Name'];
   const addSection=(label,items)=>{
-    if(!items||items.length===0) return;
     rows.push([label]);
+    if(!items||items.length===0){
+      rows.push(['No sessions this period']);
+      rows.push([]);
+      return;
+    }
     rows.push(HEADERS);
     for(const i of items) rows.push([i.invoice,i.invoiceDate,i.name,i.serviceTime,i.date,i.quantity,i.patient||'']);
-    // Totals row so this matches 1:1 against the Hours/Amount figures in the summary
-    // block at the bottom of the sheet - sums the same Service Time and Qty columns
-    // the rows above just listed, nothing derived or recalculated.
     const timeTotal=items.reduce((s,i)=>s+(parseFloat(i.serviceTime)||0),0);
     const qtyTotal=items.reduce((s,i)=>s+(parseFloat(i.quantity)||0),0);
     rows.push(['','TOTAL','',timeTotal,'',qtyTotal,'']);
@@ -1767,17 +1712,21 @@ function buildTherapistDetailRows(therapist,data){
   addSection('Admin Hours',data.admin);
   addSection('Recovery Zone',data.rz);
   const cleaningDays=data.treatmentDays.size;
+  rows.push(['Cleaning']);
   if(cleaningDays>0){
-    rows.push(['Cleaning']);
     rows.push(['',`${cleaningDays} treatment days worked`]);
-    rows.push([]);
+  } else {
+    rows.push(['No treatment days this period']);
   }
+  rows.push([]);
   const totalTreatments=data.chartingCount||0;
+  rows.push(['Charting']);
   if(totalTreatments>0){
-    rows.push(['Charting']);
     rows.push(['',`${totalTreatments} treatments`]);
-    rows.push([]);
+  } else {
+    rows.push(['No treatments this period']);
   }
+  rows.push([]);
   addSection('15-30min Sessions',data.sessions.r15);
   addSection('45min Sessions',data.sessions.r45);
   addSection('60min Sessions',data.sessions.r60);
@@ -1785,12 +1734,14 @@ function buildTherapistDetailRows(therapist,data){
   addSection('Massage Therapy',data.massage);
   addSection('Products',data.products||[]);
   const cancItems=data.cancellations||[];
+  rows.push(['Cancellations']);
   if(cancItems.length>0){
-    rows.push(['Cancellations']);
     rows.push(['Invoice #','Invoice Date','Line Item Name','Date','Patient Name','Cancelled Service Type','Commission']);
     for(const i of cancItems) rows.push([i.invoice,i.invoiceDate,i.name,i.date,i.patient||'',i.serviceTypeLabel||'(not priced)',i.amount||0]);
-    rows.push([]);
+  } else {
+    rows.push(['No cancellations this period']);
   }
+  rows.push([]);
   if(data.flags&&data.flags.length>0){
     rows.push(['Flagged (unrecognized — review manually)']);
     rows.push(['Invoice #','Date','Patient Name','Line Item Name','Total incl. tax']);
@@ -1805,17 +1756,12 @@ function downloadFullBackup(){
   const overviewRows=[];
   const usedNames=new Set();
 
-  // Row indices (within each sheet's aoa) that hold a therapist's bold/large name banner,
-  // so we can apply cell styling after the sheet is built from the array-of-arrays.
   const boldNameRows=(rowsArr)=>{
     const idxs=[];
     rowsArr.forEach((row,idx)=>{ if(row.length===1 && typeof row[0]==='string' && /^[A-Z0-9 ═()\-—.,]+$/.test(row[0]) && row[0].replace(/═/g,'').trim().length>0 && idx>0 && rowsArr[idx-1] && rowsArr[idx-1][0] && String(rowsArr[idx-1][0]).startsWith('═')) idxs.push(idx); });
     return idxs;
   };
   const applyNameStyle=(ws,rowsArr)=>{
-    // NOTE: the community build of SheetJS (xlsx.full.min.js) does not reliably persist
-    // cell styles on write — this is a best-effort attempt. The literal ═ separator lines
-    // above/below the name are the part guaranteed to show up regardless.
     for(const idx of boldNameRows(rowsArr)){
       const ref='A'+(idx+1);
       if(!ws[ref]) continue;
