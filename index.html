@@ -735,7 +735,7 @@ function calculate(){
     lastResults[therapist]={
       commission:totalCommission, charting:totalCharting, adminPay:totalAdmin,
       massage:totalMassage, rz:data.rz.reduce((s,i)=>s+i.amount,0), products:totalProducts, cleaning, salary,
-      sick:0, holiday:0, vacation:0, bonus:0, cancellation:0, cleaningDays,
+      sick:0, holiday:0, vacation:0, bonus:0, bonusFlat:0, googleReviews:0, womReferrals:0, cancellation:0, cleaningDays,
       flagCount:data.flags.length
     };
     lastTherapistData[therapist]=data;
@@ -939,7 +939,28 @@ function calculate(){
               <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">@ $${calcAvgWage(rates).toFixed(2)}/hr</td>
               <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="vacation-hrs-${uid}">0.00 hrs</td>
             </tr>
-            <tr class="bonus-row"><td>Bonus</td><td><input type="number" class="manual-input" min="0" step="0.01" value="0" id="bonus-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="background:#faeeda"></td></tr>
+            <tr class="section-header"><td colspan="14">Bonus</td></tr>
+            <tr class="bonus-row">
+              <td colspan="5">Quarterly Bonus</td>
+              <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="0" id="bonus-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px;background:#faeeda"></td>
+              <td colspan="6"></td>
+            </tr>
+            <tr class="bonus-row">
+              <td colspan="5">Google Reviews</td>
+              <td colspan="3"><input type="number" class="manual-input" min="0" step="1" value="0" id="google-reviews-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px;background:#faeeda"></td>
+              <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">× $5.00</td>
+              <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="google-reviews-amt-${uid}">$0.00</td>
+            </tr>
+            <tr class="bonus-row">
+              <td colspan="5">WOM Referrals</td>
+              <td colspan="3"><input type="number" class="manual-input" min="0" step="1" value="0" id="wom-referrals-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px;background:#faeeda"></td>
+              <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">× $5.00</td>
+              <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="wom-referrals-amt-${uid}">$0.00</td>
+            </tr>
+            <tr class="bonus-row" style="border-top:0.5px solid rgba(0,0,0,0.1)">
+              <td colspan="11" style="font-weight:600">Total Bonus</td>
+              <td colspan="3" style="font-weight:600;text-align:right" id="total-bonus-${uid}">$0.00</td>
+            </tr>
             <tr class="total-row"><td>Gross Payroll</td><td id="gross-row-${uid}">$0.00</td></tr>
             <tr class="section-header"><td colspan="2">RRSP</td></tr>
             <tr class="rrsp-row"><td>RRSP EE (6%)</td><td id="rrsp-ee-${uid}">$0.00</td></tr>
@@ -1070,8 +1091,21 @@ function recalcTotals(uid, therapist){
   const sick=parseFloat(document.getElementById('sick-'+uid)?.value)||0;
   const holiday=parseFloat(document.getElementById('holiday-'+uid)?.value)||0;
   const vacation=parseFloat(document.getElementById('vacation-'+uid)?.value)||0;
-  const bonus=parseFloat(document.getElementById('bonus-'+uid)?.value)||0;
-  r.sick=sick; r.holiday=holiday; r.vacation=vacation; r.bonus=bonus;
+  const bonusFlat=parseFloat(document.getElementById('bonus-'+uid)?.value)||0;
+  const googleReviews=parseFloat(document.getElementById('google-reviews-'+uid)?.value)||0;
+  const womReferrals=parseFloat(document.getElementById('wom-referrals-'+uid)?.value)||0;
+  const googleReviewsAmt=googleReviews*5;
+  const womReferralsAmt=womReferrals*5;
+  const bonus=bonusFlat+googleReviewsAmt+womReferralsAmt;
+  r.sick=sick; r.holiday=holiday; r.vacation=vacation;
+  r.bonusFlat=bonusFlat; r.googleReviews=googleReviews; r.womReferrals=womReferrals;
+  r.googleReviewsAmt=googleReviewsAmt; r.womReferralsAmt=womReferralsAmt; r.bonus=bonus;
+  const googleReviewsAmtEl=document.getElementById('google-reviews-amt-'+uid);
+  if(googleReviewsAmtEl) googleReviewsAmtEl.textContent='$'+googleReviewsAmt.toFixed(2);
+  const womReferralsAmtEl=document.getElementById('wom-referrals-amt-'+uid);
+  if(womReferralsAmtEl) womReferralsAmtEl.textContent='$'+womReferralsAmt.toFixed(2);
+  const totalBonusEl=document.getElementById('total-bonus-'+uid);
+  if(totalBonusEl) totalBonusEl.textContent='$'+bonus.toFixed(2);
   let flagSelectTotal=0;
   const flagCount=r.flagCount||0;
   for(let i=0;i<flagCount;i++){
@@ -1225,6 +1259,8 @@ function refreshBreakdownTable(therapist, uid){
   const savedHoliday = parseFloat(document.getElementById('holiday-'+uid)?.value)||0;
   const savedVacation= parseFloat(document.getElementById('vacation-'+uid)?.value)||0;
   const savedBonus   = parseFloat(document.getElementById('bonus-'+uid)?.value)||0;
+  const savedGoogleReviews = parseFloat(document.getElementById('google-reviews-'+uid)?.value)||0;
+  const savedWomReferrals  = parseFloat(document.getElementById('wom-referrals-'+uid)?.value)||0;
   const savedNotes   = document.getElementById('notes-'+uid)?.value||'';
 
   const card=document.getElementById('card-'+uid);
@@ -1424,7 +1460,28 @@ function refreshBreakdownTable(therapist, uid){
           <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">@ $${calcAvgWage(rates).toFixed(2)}/hr</td>
           <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="vacation-hrs-${uid}">0.00 hrs</td>
         </tr>
-        <tr class="bonus-row"><td>Bonus</td><td><input type="number" class="manual-input" min="0" step="0.01" value="${savedBonus}" id="bonus-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="background:#faeeda"></td></tr>
+        <tr class="section-header"><td colspan="14">Bonus</td></tr>
+        <tr class="bonus-row">
+          <td colspan="5">Quarterly Bonus</td>
+          <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="${savedBonus}" id="bonus-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px;background:#faeeda"></td>
+          <td colspan="6"></td>
+        </tr>
+        <tr class="bonus-row">
+          <td colspan="5">Google Reviews</td>
+          <td colspan="3"><input type="number" class="manual-input" min="0" step="1" value="${savedGoogleReviews}" id="google-reviews-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px;background:#faeeda"></td>
+          <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">× $5.00</td>
+          <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="google-reviews-amt-${uid}">$0.00</td>
+        </tr>
+        <tr class="bonus-row">
+          <td colspan="5">WOM Referrals</td>
+          <td colspan="3"><input type="number" class="manual-input" min="0" step="1" value="${savedWomReferrals}" id="wom-referrals-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px;background:#faeeda"></td>
+          <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">× $5.00</td>
+          <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="wom-referrals-amt-${uid}">$0.00</td>
+        </tr>
+        <tr class="bonus-row" style="border-top:0.5px solid rgba(0,0,0,0.1)">
+          <td colspan="11" style="font-weight:600">Total Bonus</td>
+          <td colspan="3" style="font-weight:600;text-align:right" id="total-bonus-${uid}">$0.00</td>
+        </tr>
         <tr class="total-row"><td>Gross Payroll</td><td id="gross-row-${uid}">$0.00</td></tr>
         <tr class="section-header"><td colspan="15">RRSP</td></tr>
         <tr class="rrsp-row"><td>RRSP EE (6%)</td><td id="rrsp-ee-${uid}">$0.00</td></tr>
@@ -1678,7 +1735,10 @@ function buildTherapistSummaryRows(therapist,r,data,rates){
   rows.push(['Sick/Personal Pay', fmt(avg), n(r.sick)>0?round2(n(r.sick)/avg):'0.00', fmt(r.sick)]);
   rows.push(['Holiday Pay', fmt(avg), n(r.holiday)>0?round2(n(r.holiday)/avg):'0.00', fmt(r.holiday)]);
   rows.push(['Vacation Pay', fmt(avg), n(r.vacation)>0?round2(n(r.vacation)/avg):'0.00', fmt(r.vacation)]);
-  rows.push(['Bonus', '', '', fmt(r.bonus)]);
+  rows.push(['Quarterly Bonus', '', '', fmt(r.bonusFlat)]);
+  rows.push([`Google Reviews (${n(r.googleReviews)} x $5)`, '', '', fmt(r.googleReviewsAmt)]);
+  rows.push([`WOM Referrals (${n(r.womReferrals)} x $5)`, '', '', fmt(r.womReferralsAmt)]);
+  rows.push(['Total Bonus', '', '', fmt(r.bonus)]);
   rows.push(['Gross Payroll', '', '', fmt(r.gross)]);
   rows.push(['RRSP EE (6%)', '', '', fmt(r.rrspEE)]);
   rows.push(['RRSP ER (3%)', '', '', fmt(r.rrspER)]);
