@@ -286,11 +286,6 @@ function parseDuration(name){
   const m=name.match(/[\-\s\(](\d+)(?:\-\d+)?\s*min/i)||name.match(/(\d+)\s*min/i);
   return m?parseInt(m[1]):null;
 }
-// Service Category is authoritative over Line Item Name. Noterro lets the booked service
-// name drift from the category it's filed under - e.g. "Massage Therapy - 45min" sitting
-// under Athletic Therapy - and the name-only heuristic paid those at the massage hourly
-// rate instead of the AT duration rate. Category decides; the name heuristic only handles
-// rows whose category is neither (blank, "Other", etc).
 function isMassage(cat,name){
   if(/^\s*massage therapy\s*$/i.test(cat)) return true;
   if(/^\s*athletic therapy\s*$/i.test(cat)) return false;
@@ -1122,7 +1117,9 @@ function recalcTotals(uid, therapist){
   const gross=r.commission+r.charting+r.adminPay+r.massage+r.rz+(r.products||0)+r.cleaning+r.salary+sick+holiday+vacation+cancTotal+bonus;
   const rrspEE=gross*0.06;
   const rrspER=gross*0.03;
-  const total=gross+rrspER;
+  // RRSP EE/ER are shown for reference (so you know what to deduct/remit) but are not
+  // summed into Total Gross Payroll - what leaves via payroll is the gross itself.
+  const total=gross;
   const fmt=v=>'$'+v.toFixed(2);
   document.getElementById('gross-row-'+uid).textContent=fmt(gross);
   document.getElementById('rrsp-ee-'+uid).textContent=fmt(rrspEE);
