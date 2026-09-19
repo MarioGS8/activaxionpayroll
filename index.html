@@ -44,6 +44,9 @@
   .save-confirm { font-size: 12px; color: #3b6d11; margin-left: 10px; opacity: 0; transition: opacity 0.3s; }
   .save-confirm.show { opacity: 1; }
   .settings-note { font-size: 12px; color: #5f5e5a; margin-top: 0.75rem; line-height: 1.5; }
+  .live-badge { font-size: 12px; color: #3b6d11; font-weight: 500; opacity: 0; transition: opacity 0.3s; }
+  .live-badge.show { opacity: 1; }
+  .rates-dirty { display: none; background: #fff8e1; border: 0.5px solid rgba(186,119,23,0.4); color: #854f0b; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-top: 0.75rem; }
   .results { margin-top: 1.5rem; }
   .result-card { background: #fff; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 12px; margin-bottom: 1rem; overflow: hidden; }
   .result-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.25rem; border-bottom: 0.5px solid rgba(0,0,0,0.08); background: #1a1a18; }
@@ -93,7 +96,7 @@
       <button class="settings-toggle" onclick="toggleSettings()">Edit rates</button>
     </div>
     <div class="settings-section" id="settings-section">
-      <p style="font-size:13px;color:#5f5e5a;margin-bottom:0.75rem;">Edit rates directly. Salary is per pay period. Click Save & export, then load the file next session.</p>
+      <p style="font-size:13px;color:#5f5e5a;margin-bottom:0.75rem;">Edit any rate below — changes apply immediately and are remembered in this browser. Salary is per pay period.</p>
       <div style="margin-bottom:1rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <label style="font-size:13px;color:#5f5e5a">Show therapists:</label>
         <div id="therapist-filter" style="display:flex;gap:8px;flex-wrap:wrap"></div>
@@ -113,13 +116,16 @@
       </div>
       <button class="add-row-btn" onclick="addTherapistRow()">+ Add therapist</button>
       <div style="display:flex;align-items:center;gap:10px;margin-top:1rem;flex-wrap:wrap">
-        <button class="save-btn" onclick="saveRates()">Save &amp; export rates</button>
+        <span class="live-badge" id="live-confirm">✓ Rates applied</span>
+        <button class="save-btn" style="margin-top:0" onclick="saveRates()">Export rates file</button>
         <label style="padding:7px 14px;background:none;border:0.5px solid rgba(0,0,0,0.2);border-radius:7px;font-size:13px;cursor:pointer;color:#1a1a18">
           Load saved rates<input type="file" accept=".json" style="display:none" onchange="loadRatesFile(this)">
         </label>
-        <span class="save-confirm" id="save-confirm">Saved — check your downloads</span>
+        <button class="add-row-btn" style="margin-top:0" onclick="resetRatesToDefault()">Reset to defaults</button>
+        <span class="save-confirm" id="save-confirm">Exported — check your downloads</span>
       </div>
-      <p class="settings-note">⚠ To keep changes: Save &amp; export, store rates.json in Google Drive, load it each session.</p>
+      <p class="settings-note">Edits take effect as soon as you type them and are saved in this browser automatically. <strong>Export rates file</strong> is only needed if you want a copy to move to another computer or keep in Google Drive.</p>
+      <div class="rates-dirty" id="rates-dirty">⚠ Rates changed since the last calculation — click <strong>Calculate payroll</strong> again to apply them to the results below.</div>
     </div>
   </div>
 
@@ -157,14 +163,28 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-let THERAPIST_RATES = {
+const DEFAULT_RATES = {
   "Mario Starnino":     { r15:21.00, r30:42.00, r45:53.50, r60:57.50, r90:86.25, massage:0,  admin:22.10, rz15:6, rz30:12, salary:1000, salaryRate:50 },
   "Alexis Boosamra":    { r15:21.00, r30:42.00, r45:53.50, r60:57.50, r90:86.25, massage:0,  admin:22.10, rz15:6, rz30:12, salary:337,  salaryRate:33.7 },
   "Jordan Katsoulis":   { r15:17.85, r30:35.70, r45:45.38, r60:48.96, r90:73.44, massage:0,  admin:20.50, rz15:6, rz30:12, salary:0   },
   "Gabrielle Khreiche": { r15:15.75, r30:31.50, r45:40.00, r60:43.00, r90:64.50, massage:46, admin:18.10, rz15:6, rz30:12, salary:0   },
-  "Grace Lewis":        { r15:14.00, r30:28.00, r45:36.00, r60:40.00, r90:60.00, massage:0,  admin:16.10, rz15:6, rz30:12, salary:0   },
-  "Justin Hernandez":   { r15:14.00, r30:28.00, r45:36.00, r60:40.00, r90:60.00, massage:0,  admin:16.10, rz15:6, rz30:12, salary:0   }
+  "Grace Lewis":        { r15:14.00, r30:28.00, r45:36.00, r60:40.00, r90:60.00, massage:0,  admin:16.60, rz15:6, rz30:12, salary:0   },
+  "Justin Hernandez":   { r15:14.00, r30:28.00, r45:36.00, r60:40.00, r90:60.00, massage:0,  admin:16.60, rz15:6, rz30:12, salary:0   }
 };
+const RATES_STORAGE_KEY = 'activaxion-payroll-rates-v1';
+
+let THERAPIST_RATES = JSON.parse(JSON.stringify(DEFAULT_RATES));
+try {
+  const stored = localStorage.getItem(RATES_STORAGE_KEY);
+  if(stored){
+    const parsed = JSON.parse(stored);
+    if(parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) THERAPIST_RATES = parsed;
+  }
+} catch(e) { /* storage unavailable — defaults stand */ }
+
+function persistRates(){
+  try { localStorage.setItem(RATES_STORAGE_KEY, JSON.stringify(THERAPIST_RATES)); } catch(e) {}
+}
 
 function buildRatesTable(){
   const tbody=document.getElementById('rates-tbody');
@@ -172,14 +192,14 @@ function buildRatesTable(){
   const filterEl=document.getElementById('therapist-filter');
   if(filterEl) filterEl.innerHTML='';
   for(const [name,r] of Object.entries(THERAPIST_RATES)){
-    const row=makeRow(name,r); row.style.display='none'; tbody.appendChild(row);
+    const row=makeRow(name,r); tbody.appendChild(row);
     if(filterEl){
       const id='filter-'+name.replace(/\s+/g,'_');
       const parts=name.split(' ');
       const shortName=parts[0]+' '+(parts[1]?parts[1][0]+'.':'');
       const label=document.createElement('label');
       label.style.cssText='font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;padding:3px 8px;border:0.5px solid rgba(0,0,0,0.15);border-radius:5px;background:#f5f5f3';
-      label.innerHTML=`<input type="checkbox" id="${id}" onchange="filterTherapistRow('${name}',this.checked)"> ${shortName}`;
+      label.innerHTML=`<input type="checkbox" id="${id}" checked onchange="filterTherapistRow('${name}',this.checked)"> ${shortName}`;
       filterEl.appendChild(label);
     }
   }
@@ -213,43 +233,89 @@ function calcAvgWage(r){
 function makeRow(name,r){
   const tr=document.createElement('tr');
   tr.innerHTML=`
-    <td style="text-align:center;font-weight:500;font-size:13px;color:#0f6e56;padding:5px 8px;white-space:nowrap">$${calcAvgWage(r).toFixed(2)}/hr</td>
-    <td><input type="text" value="${name}" placeholder="Full name" style="min-width:140px"></td>
-    <td><input type="number" value="${r.r15}" step="0.01" min="0"></td>
-    <td><input type="number" value="${r.r30}" step="0.01" min="0"></td>
-    <td><input type="number" value="${r.r45}" step="0.01" min="0"></td>
-    <td><input type="number" value="${r.r60}" step="0.01" min="0"></td>
-    <td><input type="number" value="${r.r90}" step="0.01" min="0"></td>
-    <td><input type="number" value="${r.massage}" step="0.01" min="0"></td>
-    <td><input type="number" value="${r.admin}" step="0.01" min="0"></td>
-    <td><input type="number" value="${r.rz15??6}" step="0.01" min="0"></td>
-    <td><input type="number" value="${r.rz30??12}" step="0.01" min="0"></td>
-    <td><input type="number" value="${r.salary}" step="0.01" min="0"></td>
-    <td><input type="number" value="${r.salaryRate||''}" step="0.01" min="0" placeholder="—"></td>
-    <td><button class="del-btn" onclick="this.closest('tr').remove()">×</button></td>`;
+    <td class="avg-wage-cell" style="text-align:center;font-weight:500;font-size:13px;color:#0f6e56;padding:5px 8px;white-space:nowrap">$${calcAvgWage(r).toFixed(2)}/hr</td>
+    <td><input type="text" value="${name}" placeholder="Full name" style="min-width:140px" oninput="applyRateEdits()"></td>
+    <td><input type="number" value="${r.r15}" step="0.01" min="0" oninput="applyRateEdits()"></td>
+    <td><input type="number" value="${r.r30}" step="0.01" min="0" oninput="applyRateEdits()"></td>
+    <td><input type="number" value="${r.r45}" step="0.01" min="0" oninput="applyRateEdits()"></td>
+    <td><input type="number" value="${r.r60}" step="0.01" min="0" oninput="applyRateEdits()"></td>
+    <td><input type="number" value="${r.r90}" step="0.01" min="0" oninput="applyRateEdits()"></td>
+    <td><input type="number" value="${r.massage}" step="0.01" min="0" oninput="applyRateEdits()"></td>
+    <td><input type="number" value="${r.admin}" step="0.01" min="0" oninput="applyRateEdits()"></td>
+    <td><input type="number" value="${r.rz15??6}" step="0.01" min="0" oninput="applyRateEdits()"></td>
+    <td><input type="number" value="${r.rz30??12}" step="0.01" min="0" oninput="applyRateEdits()"></td>
+    <td><input type="number" value="${r.salary}" step="0.01" min="0" oninput="applyRateEdits()"></td>
+    <td><input type="number" value="${r.salaryRate||''}" step="0.01" min="0" placeholder="—" oninput="applyRateEdits()"></td>
+    <td><button class="del-btn" onclick="this.closest('tr').remove();applyRateEdits()">×</button></td>`;
   return tr;
 }
 function addTherapistRow(){
   document.getElementById('rates-tbody').appendChild(makeRow('',{r15:0,r30:0,r45:0,r60:0,r90:0,massage:0,admin:0,rz15:6,rz30:12,salary:0,salaryRate:0}));
 }
-function saveRates(){
+function readRatesTable(){
   const newRates={};
   for(const row of document.querySelectorAll('#rates-tbody tr')){
     const inputs=row.querySelectorAll('input');
+    if(inputs.length<12) continue;
     const name=inputs[0].value.trim();
     if(!name) continue;
-    newRates[name]={r15:parseFloat(inputs[1].value)||0,r30:parseFloat(inputs[2].value)||0,r45:parseFloat(inputs[3].value)||0,r60:parseFloat(inputs[4].value)||0,r90:parseFloat(inputs[5].value)||0,massage:parseFloat(inputs[6].value)||0,admin:parseFloat(inputs[7].value)||0,rz15:parseFloat(inputs[8].value)||0,rz30:parseFloat(inputs[9].value)||0,salary:parseFloat(inputs[10].value)||0,salaryRate:parseFloat(inputs[11].value)||0};
+    const rec={
+      r15:parseFloat(inputs[1].value)||0,
+      r30:parseFloat(inputs[2].value)||0,
+      r45:parseFloat(inputs[3].value)||0,
+      r60:parseFloat(inputs[4].value)||0,
+      r90:parseFloat(inputs[5].value)||0,
+      massage:parseFloat(inputs[6].value)||0,
+      admin:parseFloat(inputs[7].value)||0,
+      rz15:parseFloat(inputs[8].value)||0,
+      rz30:parseFloat(inputs[9].value)||0,
+      salary:parseFloat(inputs[10].value)||0,
+      salaryRate:parseFloat(inputs[11].value)||0
+    };
+    newRates[name]=rec;
+    const avgCell=row.querySelector('.avg-wage-cell');
+    if(avgCell) avgCell.textContent='$'+calcAvgWage(rec).toFixed(2)+'/hr';
   }
-  THERAPIST_RATES=newRates;
-  const blob=new Blob([JSON.stringify(newRates,null,2)],{type:'application/json'});
+  return newRates;
+}
+// Applies whatever is currently typed in the rates table straight into THERAPIST_RATES.
+// No download, no extra click — this is what makes a manual edit actually count.
+function applyRateEdits(){
+  THERAPIST_RATES=readRatesTable();
+  persistRates();
+  const badge=document.getElementById('live-confirm');
+  if(badge){ badge.classList.add('show'); clearTimeout(window.__liveBadgeTimer); window.__liveBadgeTimer=setTimeout(()=>badge.classList.remove('show'),1800); }
+  const dirty=document.getElementById('rates-dirty');
+  if(dirty) dirty.style.display=(document.getElementById('results').children.length>0)?'block':'none';
+}
+function saveRates(){
+  applyRateEdits();
+  const blob=new Blob([JSON.stringify(THERAPIST_RATES,null,2)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='payroll-rates.json'; a.click(); URL.revokeObjectURL(a.href);
   const conf=document.getElementById('save-confirm'); conf.classList.add('show'); setTimeout(()=>conf.classList.remove('show'),2500);
 }
 function loadRatesFile(input){
   const file=input.files[0]; if(!file) return;
   const reader=new FileReader();
-  reader.onload=e=>{ try{ THERAPIST_RATES=JSON.parse(e.target.result); buildRatesTable(); }catch(err){ alert('Could not read rates file.'); } };
+  reader.onload=e=>{
+    try{
+      const parsed=JSON.parse(e.target.result);
+      if(!parsed||typeof parsed!=='object'||Object.keys(parsed).length===0) throw new Error('empty');
+      THERAPIST_RATES=parsed; persistRates(); buildRatesTable();
+      const dirty=document.getElementById('rates-dirty');
+      if(dirty) dirty.style.display=(document.getElementById('results').children.length>0)?'block':'none';
+    }catch(err){ alert('Could not read rates file.'); }
+  };
   reader.readAsText(file);
+  input.value='';
+}
+function resetRatesToDefault(){
+  if(!confirm('Reset every rate back to the built-in defaults? Any edits you made in this browser will be lost.')) return;
+  THERAPIST_RATES=JSON.parse(JSON.stringify(DEFAULT_RATES));
+  try{ localStorage.removeItem(RATES_STORAGE_KEY); }catch(e){}
+  buildRatesTable();
+  const dirty=document.getElementById('rates-dirty');
+  if(dirty) dirty.style.display=(document.getElementById('results').children.length>0)?'block':'none';
 }
 function toggleSettings(){
   const s=document.getElementById('settings-section'); s.classList.toggle('open');
@@ -607,6 +673,15 @@ function checkReady(){
 document.getElementById('run-btn').addEventListener('click', calculate);
 
 function calculate(){
+  // Always pull the latest typed rates before computing, so an edit left in the
+  // rates table can never be silently ignored.
+  if(document.querySelectorAll('#rates-tbody tr').length>0){
+    THERAPIST_RATES=readRatesTable();
+    persistRates();
+  }
+  const dirtyEl=document.getElementById('rates-dirty');
+  if(dirtyEl) dirtyEl.style.display='none';
+
   periodStart=document.getElementById('period-start').value;
   periodEnd=document.getElementById('period-end').value;
   const winStart=new Date(periodStart+'T00:00:00');
