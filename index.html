@@ -169,9 +169,18 @@ const DEFAULT_RATES = {
   "Jordan Katsoulis":   { r15:18.25, r30:36.50, r45:46.50, r60:50.00, r90:75.00, massage:0,  admin:20.50, rz15:6, rz30:12, salary:0   },
   "Gabrielle Khreiche": { r15:15.75, r30:31.50, r45:40.00, r60:43.00, r90:64.50, massage:46, admin:18.10, rz15:6, rz30:12, salary:0   },
   "Grace Lewis":        { r15:14.00, r30:28.00, r45:36.00, r60:40.00, r90:60.00, massage:0,  admin:16.60, rz15:6, rz30:12, salary:0   },
-  "Justin Hernandez":   { r15:14.00, r30:28.00, r45:36.00, r60:40.00, r90:60.00, massage:0,  admin:16.60, rz15:6, rz30:12, salary:0   }
+  "Justin Hernandez":   { r15:14.00, r30:28.00, r45:36.00, r60:40.00, r90:60.00, massage:0,  admin:16.60, rz15:6, rz30:12, salary:0   },
+  "Meghan Vincent":     { r15:14.25, r30:28.50, r45:37.50, r60:40.00, r90:60.00, massage:0,  admin:16.60, rz15:6, rz30:12, salary:0   },
+  "David De Petrillo":  { r15:12.50, r30:25.00, r45:33.75, r60:40.00, r90:60.00, massage:46, admin:16.60, rz15:6, rz30:12, salary:0   }
 };
 const RATES_STORAGE_KEY = 'activaxion-payroll-rates-v1';
+
+// Names go into inline onclick="fn('...')" handlers. Escape them so an apostrophe
+// (e.g. O'Neil) or quote can't break the handler.
+function escHtml(s){ return String(s??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function jsArg(s){ return escHtml(String(s??'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")); }
+// DOM-safe id fragment for a therapist name (letters/digits only).
+function uidFor(name){ return String(name).replace(/[^A-Za-z0-9]+/g,'_'); }
 
 let THERAPIST_RATES = JSON.parse(JSON.stringify(DEFAULT_RATES));
 try {
@@ -191,8 +200,26 @@ const RATE_UPDATES = [
   { name:'Jordan Katsoulis', field:'r15', from:17.85, to:18.25 },
   { name:'Jordan Katsoulis', field:'r90', from:73.44, to:75.00 },
 ];
-function applyRateUpdates(){
+// New therapists that must reach browsers that already have saved rates. Each is added once;
+// if you later delete one by hand it stays deleted (tracked in ADDED_STORAGE_KEY).
+const NEW_THERAPISTS=['Meghan Vincent','David De Petrillo'];
+const ADDED_STORAGE_KEY='activaxion-payroll-added-v1';
+function addNewTherapists(force){
+  let added=[];
+  try{ added=JSON.parse(localStorage.getItem(ADDED_STORAGE_KEY)||'[]'); }catch(e){}
   let changed=false;
+  for(const name of NEW_THERAPISTS){
+    if(!THERAPIST_RATES[name] && (force || !added.includes(name))){
+      THERAPIST_RATES[name]=JSON.parse(JSON.stringify(DEFAULT_RATES[name]));
+      changed=true;
+    }
+    if(!added.includes(name)) added.push(name);
+  }
+  try{ localStorage.setItem(ADDED_STORAGE_KEY,JSON.stringify(added)); }catch(e){}
+  return changed;
+}
+function applyRateUpdates(force){
+  let changed=addNewTherapists(force);
   for(const u of RATE_UPDATES){
     const r=THERAPIST_RATES[u.name];
     if(r && Math.abs((parseFloat(r[u.field])||0)-u.from)<0.001){ r[u.field]=u.to; changed=true; }
@@ -213,12 +240,12 @@ function buildRatesTable(){
   for(const [name,r] of Object.entries(THERAPIST_RATES)){
     const row=makeRow(name,r); tbody.appendChild(row);
     if(filterEl){
-      const id='filter-'+name.replace(/\s+/g,'_');
+      const id='filter-'+uidFor(name);
       const parts=name.split(' ');
       const shortName=parts[0]+' '+(parts[1]?parts[1][0]+'.':'');
       const label=document.createElement('label');
       label.style.cssText='font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;padding:3px 8px;border:0.5px solid rgba(0,0,0,0.15);border-radius:5px;background:#f5f5f3';
-      label.innerHTML=`<input type="checkbox" id="${id}" checked onchange="filterTherapistRow('${name}',this.checked)"> ${shortName}`;
+      label.innerHTML=`<input type="checkbox" id="${id}" data-name="${escHtml(name)}" checked onchange="filterTherapistRow(this.dataset.name,this.checked)"> ${escHtml(shortName)}`;
       filterEl.appendChild(label);
     }
   }
@@ -235,7 +262,7 @@ function filterTherapistRow(name,show){
 function toggleAllTherapists(show){
   document.querySelectorAll('#therapist-filter input[type="checkbox"]').forEach(cb=>{
     cb.checked=show;
-    const name=cb.id.replace('filter-','').replace(/_/g,' ');
+    const name=cb.dataset.name;
     filterTherapistRow(name,show);
   });
 }
@@ -253,7 +280,7 @@ function makeRow(name,r){
   const tr=document.createElement('tr');
   tr.innerHTML=`
     <td class="avg-wage-cell" style="text-align:center;font-weight:500;font-size:13px;color:#0f6e56;padding:5px 8px;white-space:nowrap">$${calcAvgWage(r).toFixed(2)}/hr</td>
-    <td><input type="text" value="${name}" placeholder="Full name" style="min-width:140px" oninput="applyRateEdits()"></td>
+    <td><input type="text" value="${escHtml(name)}" placeholder="Full name" style="min-width:140px" oninput="applyRateEdits()"></td>
     <td><input type="number" value="${r.r15}" step="0.01" min="0" oninput="applyRateEdits()"></td>
     <td><input type="number" value="${r.r30}" step="0.01" min="0" oninput="applyRateEdits()"></td>
     <td><input type="number" value="${r.r45}" step="0.01" min="0" oninput="applyRateEdits()"></td>
@@ -320,7 +347,7 @@ function loadRatesFile(input){
     try{
       const parsed=JSON.parse(e.target.result);
       if(!parsed||typeof parsed!=='object'||Object.keys(parsed).length===0) throw new Error('empty');
-      THERAPIST_RATES=parsed; persistRates(); applyRateUpdates(); buildRatesTable();
+      THERAPIST_RATES=parsed; persistRates(); applyRateUpdates(true); buildRatesTable();
       const dirty=document.getElementById('rates-dirty');
       if(dirty) dirty.style.display=(document.getElementById('results').children.length>0)?'block':'none';
     }catch(err){ alert('Could not read rates file.'); }
@@ -342,24 +369,34 @@ function toggleSettings(){
 }
 buildRatesTable();
 
-// CSV parser
+// CSV parser — reads the whole file character by character so commas, quotes and
+// line breaks inside quoted fields stay in their own cell (a line break inside a
+// note or item name no longer shifts every following row).
 function parseCSV(text){
-  const lines=text.trim().split('\n');
-  const headers=lines[0].split(',').map(h=>h.replace(/^"|"$/g,'').trim());
-  const rows=[];
-  for(let i=1;i<lines.length;i++){
-    const line=lines[i]; if(!line.trim()) continue;
-    const vals=[]; let inQ=false,cur='';
-    for(let c=0;c<line.length;c++){
-      const ch=line[c];
+  text=text.replace(/^﻿/,'');
+  const records=[]; let rec=[]; let cur=''; let inQ=false;
+  for(let c=0;c<text.length;c++){
+    const ch=text[c];
+    if(inQ){
       if(ch==='"'){
-        if(inQ&&line[c+1]==='"'){cur+='"';c++;}
-        else{inQ=!inQ;}
-      }
-      else if(ch===','&&!inQ){vals.push(cur);cur='';}
-      else{cur+=ch;}
-    }
-    vals.push(cur);
+        if(text[c+1]==='"'){cur+='"';c++;}
+        else inQ=false;
+      } else cur+=ch;
+    } else if(ch==='"'){ inQ=true; }
+    else if(ch===','){ rec.push(cur); cur=''; }
+    else if(ch==='\n'||ch==='\r'){
+      if(ch==='\r'&&text[c+1]==='\n') c++;
+      rec.push(cur); cur='';
+      records.push(rec); rec=[];
+    } else cur+=ch;
+  }
+  if(cur!==''||rec.length>0){ rec.push(cur); records.push(rec); }
+  if(records.length===0) return [];
+  const headers=records[0].map(h=>h.trim());
+  const rows=[];
+  for(let i=1;i<records.length;i++){
+    const vals=records[i];
+    if(vals.every(v=>!v.trim())) continue;
     const row={};
     headers.forEach((h,idx)=>{row[h]=(vals[idx]||'').trim();});
     rows.push(row);
@@ -434,12 +471,6 @@ function classifyAndEarn(cat,name,subtotal,rates,productCat,serviceTime){
   return {commission:0,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Unknown',flag:true};
 }
 
-function correctMassageMins(raw){
-  if(raw===45) return 30;
-  if(raw===75) return 60;
-  if(raw===105) return 90;
-  return raw;
-}
 function makeMassageHeader(){
   const hdrs=['Invoice #','Invoice Date','Service Category','Line Item Name','Service Time','Duration','Service Date','Qty','Practitioner','Discount Name','Disc Amt','Subtotal','Tax','Total','Balance','Patient Name','Move to'];
   return '<tr style="border-bottom:0.5px solid rgba(0,0,0,0.15)">'+hdrs.map(h=>'<th style="font-size:11px;color:#5f5e5a;font-weight:500;padding:4px 8px 6px 0;white-space:nowrap">'+h+'</th>').join('')+'</tr>';
@@ -485,7 +516,7 @@ function makeCancellationRows(items,uid,therapist,rates){
       +'<td '+cs+'>'+i.total+'</td>'
       +'<td '+cs+'>'+i.balance+'</td>'
       +'<td '+cs+'>'+i.patient+'</td>'
-      +'<td style="padding:4px 8px 4px 0"><select class="canc-select" onchange="updateCancellationType(\''+therapist+'\',\''+uid+'\',\''+i.key+'\',this)">'+opts+'</select></td>'
+      +'<td style="padding:4px 8px 4px 0"><select class="canc-select" onchange="updateCancellationType(\''+jsArg(therapist)+'\',\''+uid+'\',\''+i.key+'\',this)">'+opts+'</select></td>'
       +'<td style="padding:4px 8px 4px 0;text-align:right;font-weight:500" id="canc-amount-'+uid+'-'+i.key+'">$'+(i.amount||0).toFixed(2)+'</td>'
       +'</tr>';
   }).join('');
@@ -542,8 +573,8 @@ function makeRecoveryZoneRows(items,uid,therapist){
       +'<td '+cs+'>'+i.total+'</td>'
       +'<td '+cs+'>'+i.balance+'</td>'
       +'<td '+cs+'>'+i.patient+'</td>'
-      +'<td style="padding:4px 4px 4px 0"><input type="number" min="0" step="0.01" value="'+(i.amount||0).toFixed(2)+'" style="width:70px;padding:3px 5px;border:0.5px solid rgba(0,0,0,0.25);border-radius:5px;font-size:11px;background:#fffde7;text-align:right" onchange="updateRecoveryZoneAmount(\''+therapist+'\',\''+uid+'\',\''+i.key+'\',this.value)"></td>'
-      +'<td style="padding:4px 8px 4px 0"><select style="font-size:11px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.2);border-radius:4px;background:#fff" onchange="moveRow(\''+therapist+'\',\''+uid+'\',this,\'admin\',\''+i.key+'\')"><option value="">Move to...</option>'+opts+'</select></td>'
+      +'<td style="padding:4px 4px 4px 0"><input type="number" min="0" step="0.01" value="'+(i.amount||0).toFixed(2)+'" style="width:70px;padding:3px 5px;border:0.5px solid rgba(0,0,0,0.25);border-radius:5px;font-size:11px;background:#fffde7;text-align:right" onchange="updateRecoveryZoneAmount(\''+jsArg(therapist)+'\',\''+uid+'\',\''+i.key+'\',this.value)"></td>'
+      +'<td style="padding:4px 8px 4px 0"><select style="font-size:11px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.2);border-radius:4px;background:#fff" onchange="moveRow(\''+jsArg(therapist)+'\',\''+uid+'\',this,\'admin\',\''+i.key+'\')"><option value="">Move to...</option>'+opts+'</select></td>'
       +'</tr>';
   }).join('');
 }
@@ -590,7 +621,7 @@ function makeEditableDurationRows(items,uid,therapist,rate,sectionType){
       +'<td '+cs+'>'+(i.serviceCategory||'')+'</td>'
       +'<td style="color:#5f5e5a;font-size:11px;padding:4px 8px 4px 0;min-width:220px">'+i.name+'</td>'
       +'<td '+cs+'>'+i.serviceTime+'</td>'
-      +'<td style="padding:4px 4px 4px 0"><input type="number" min="5" step="5" value="'+corrected+'" style="width:55px;padding:3px 5px;border:0.5px solid rgba(0,0,0,0.25);border-radius:5px;font-size:11px;background:#fffde7" onchange="'+updateFnName+'(\''+therapist+'\',\''+uid+'\',\''+i.key+'\',this.value,'+rate+')"></td>'
+      +'<td style="padding:4px 4px 4px 0"><input type="number" min="5" step="5" value="'+corrected+'" style="width:55px;padding:3px 5px;border:0.5px solid rgba(0,0,0,0.25);border-radius:5px;font-size:11px;background:#fffde7" onchange="'+updateFnName+'(\''+jsArg(therapist)+'\',\''+uid+'\',\''+i.key+'\',this.value,'+rate+')"></td>'
       +'<td '+cs+'>'+i.date+'</td>'
       +'<td '+cs+'>'+i.quantity+'</td>'
       +'<td '+cs+'>'+i.practitioner+'</td>'
@@ -601,7 +632,7 @@ function makeEditableDurationRows(items,uid,therapist,rate,sectionType){
       +'<td '+cs+'>'+i.total+'</td>'
       +'<td '+cs+'>'+i.balance+'</td>'
       +'<td '+cs+'>'+i.patient+'</td>'
-      +'<td style="padding:4px 8px 4px 0"><select style="font-size:11px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.2);border-radius:4px;background:#fff" onchange="moveRow(\''+therapist+'\',\''+uid+'\',this,\''+sectionType+'\',\''+i.key+'\')" ><option value="">Move to...</option>'+opts+'</select></td>'
+      +'<td style="padding:4px 8px 4px 0"><select style="font-size:11px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.2);border-radius:4px;background:#fff" onchange="moveRow(\''+jsArg(therapist)+'\',\''+uid+'\',this,\''+sectionType+'\',\''+i.key+'\')" ><option value="">Move to...</option>'+opts+'</select></td>'
       +'</tr>';
   }).join('');
 }
@@ -817,7 +848,7 @@ function calculate(){
     const cleaningHrsRounded=parseFloat((cleaningDays*15/60).toFixed(2));
     const cleaning=parseFloat((cleaningHrsRounded*rates.admin).toFixed(2));
     const salary=rates.salary||0;
-    const uid=therapist.replace(/\s+/g,'_');
+    const uid=uidFor(therapist);
 
     const totalCommission=Object.values(data.sessions).flat().reduce((s,i)=>s+i.amount,0);
     const chartingTreatments=data.chartingCount||0;
@@ -875,7 +906,7 @@ function calculate(){
         <td ${colStyle}>${i.total}</td>
         <td ${colStyle}>${i.balance}</td>
         <td ${colStyle}>${i.patient}</td>
-        <td style="padding:4px 8px 4px 0"><select style="font-size:11px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.2);border-radius:4px;background:#fff" onchange="moveRow('${therapist}','${uid}',this,'${currentSection}','${i.key}')"><option value="">Move to...</option>${opts}</select></td>
+        <td style="padding:4px 8px 4px 0"><select style="font-size:11px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.2);border-radius:4px;background:#fff" onchange="moveRow('${jsArg(therapist)}','${uid}',this,'${currentSection}','${i.key}')"><option value="">Move to...</option>${opts}</select></td>
       </tr>`;
     }).join('');
     const makeHeader=()=>`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.15)">${COL_HEADERS.map(h=>`<th style="font-size:11px;color:#5f5e5a;font-weight:500;padding:4px 8px 6px 0;white-space:nowrap">${h}</th>`).join('')}</tr>`;
@@ -911,7 +942,7 @@ function calculate(){
             ${data.sessions.r90.length>0?`<tr class="section-header"><td colspan="14">90min Sessions (${data.sessions.r90.length} · $${sumItems(data.sessions.r90).toFixed(2)})</td></tr>${makeHeader()}${makeRows(data.sessions.r90,"r90")}<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="5" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Total: ${data.sessions.r90.reduce((s,i)=>s+(parseFloat(i.serviceTime)||0),0)} min · Qty: ${data.sessions.r90.reduce((s,i)=>s+(parseFloat(i.quantity)||0),0)}</td><td colspan="5" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">${rates.r90.toFixed(2)} (${(rates.r90/90*60).toFixed(2)}/hr)</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">${sumItems(data.sessions.r90).toFixed(2)}</td></tr>`:''}
             ${(()=>{
               if(!data.massage||data.massage.length===0) return '';
-              const totalMin=data.massage.reduce((s,i)=>s+(i.massageMins||parseFloat(i.serviceTime)||0),0);
+              const totalMin=data.massage.reduce((s,i)=>s+(i.massageMins||parseDuration(i.name)||parseFloat(i.serviceTime)||0),0);
               const totalQty=data.massage.reduce((s,i)=>s+(parseFloat(i.quantity)||0),0);
               const totalPay=sumItems(data.massage).toFixed(2);
               return '<tr class="section-header"><td colspan="17">Massage Therapy ('+data.massage.length+' · $'+totalPay+')</td></tr>'
@@ -959,7 +990,7 @@ function calculate(){
               const r45Pay=sumItems(data.sessions.r45).toFixed(2);
               const r60r90Hrs=(data.sessions.r60.reduce((s,i)=>s+(i.mins||60)/60,0)+data.sessions.r90.reduce((s,i)=>s+(i.mins||90)/60,0)).toFixed(2);
               const r60r90Pay=(sumItems(data.sessions.r60)+sumItems(data.sessions.r90)).toFixed(2);
-              const massHrs=data.massage.reduce((s,i)=>{const m=i.massageMins||parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0).toFixed(2);
+              const massHrs=data.massage.reduce((s,i)=>{const m=i.massageMins||parseDuration(i.name)||parseFloat(i.serviceTime)||60;return s+m/60;},0).toFixed(2);
               const massPay=sumItems(data.massage).toFixed(2);
               const prodPay=(data.products||[]).reduce((s,i)=>s+i.amount,0).toFixed(2);
               const salPay=salary.toFixed(2);
@@ -1011,44 +1042,44 @@ function calculate(){
                 chartingHrsRounded +
                 (data.sessions.r15.reduce((s,i)=>s+(i.mins||30)/60,0))+(data.sessions.r45.reduce((s,i)=>s+(i.mins||45)/60,0))+
                 (data.sessions.r60.reduce((s,i)=>s+(i.mins||60)/60,0))+(data.sessions.r90.reduce((s,i)=>s+(i.mins||90)/60,0))+
-                data.massage.reduce((s,i)=>{const m=i.massageMins||parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0)
+                data.massage.reduce((s,i)=>{const m=i.massageMins||parseDuration(i.name)||parseFloat(i.serviceTime)||60;return s+m/60;},0)
               ).toFixed(2)} hrs total</td>
               <td colspan="2" style="font-size:13px;font-weight:600;text-align:right;padding:8px 0;color:#0f6e56" id="subtotal-earned-${uid}">$0.00</td>
             </tr>
             <tr class="section-header"><td colspan="14">Manual entries</td></tr>
             <tr>
               <td colspan="5">Sick / Personal Pay</td>
-              <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="0" id="sick-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px"></td>
+              <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="0" id="sick-${uid}" oninput="recalcTotals('${uid}','${jsArg(therapist)}')" style="width:100px"></td>
               <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">@ $${calcAvgWage(rates).toFixed(2)}/hr</td>
               <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="sick-hrs-${uid}">0.00 hrs</td>
             </tr>
             <tr>
               <td colspan="5">Holiday Pay</td>
-              <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="0" id="holiday-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px"></td>
+              <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="0" id="holiday-${uid}" oninput="recalcTotals('${uid}','${jsArg(therapist)}')" style="width:100px"></td>
               <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">@ $${calcAvgWage(rates).toFixed(2)}/hr</td>
               <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="holiday-hrs-${uid}">0.00 hrs</td>
             </tr>
             <tr>
               <td colspan="5">Vacation Pay</td>
-              <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="0" id="vacation-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px"></td>
+              <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="0" id="vacation-${uid}" oninput="recalcTotals('${uid}','${jsArg(therapist)}')" style="width:100px"></td>
               <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">@ $${calcAvgWage(rates).toFixed(2)}/hr</td>
               <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="vacation-hrs-${uid}">0.00 hrs</td>
             </tr>
             <tr class="section-header"><td colspan="14">Bonus</td></tr>
             <tr class="bonus-row">
               <td colspan="5">Quarterly Bonus</td>
-              <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="0" id="bonus-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px;background:#faeeda"></td>
+              <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="0" id="bonus-${uid}" oninput="recalcTotals('${uid}','${jsArg(therapist)}')" style="width:100px;background:#faeeda"></td>
               <td colspan="6"></td>
             </tr>
             <tr class="bonus-row">
               <td colspan="5">Google Reviews</td>
-              <td colspan="3"><input type="number" class="manual-input" min="0" step="1" value="0" id="google-reviews-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px;background:#faeeda"></td>
+              <td colspan="3"><input type="number" class="manual-input" min="0" step="1" value="0" id="google-reviews-${uid}" oninput="recalcTotals('${uid}','${jsArg(therapist)}')" style="width:100px;background:#faeeda"></td>
               <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">× $5.00</td>
               <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="google-reviews-amt-${uid}">$0.00</td>
             </tr>
             <tr class="bonus-row">
               <td colspan="5">WOM Referrals</td>
-              <td colspan="3"><input type="number" class="manual-input" min="0" step="1" value="0" id="wom-referrals-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px;background:#faeeda"></td>
+              <td colspan="3"><input type="number" class="manual-input" min="0" step="1" value="0" id="wom-referrals-${uid}" oninput="recalcTotals('${uid}','${jsArg(therapist)}')" style="width:100px;background:#faeeda"></td>
               <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">× $5.00</td>
               <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="wom-referrals-amt-${uid}">$0.00</td>
             </tr>
@@ -1082,7 +1113,7 @@ function calculate(){
                   <td style="font-size:12px">${f.patient||''}</td>
                   <td style="font-size:12px">${f.name||''}</td>
                   <td style="color:#ba7517">$${f.totalWithTax.toFixed(2)}</td>
-                  <td><select class="canc-select" id="canc-${uid}-${idx}" onchange="recalcTotals('${uid}','${therapist}')">${opts}</select></td>
+                  <td><select class="canc-select" id="canc-${uid}-${idx}" onchange="recalcTotals('${uid}','${jsArg(therapist)}')">${opts}</select></td>
                   <td id="canc-val-${uid}-${idx}" style="color:#ba7517;text-align:right">$0.00</td>
                 </tr>`;
               }).join('')}
@@ -1151,7 +1182,7 @@ function calculate(){
             </div>
           </div>
           <div style="margin-top:10px;display:flex;gap:8px">
-            <button onclick="submitManualEntry('${therapist}','${uid}')" style="padding:7px 16px;background:#185fa5;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer">Add entry</button>
+            <button onclick="submitManualEntry('${jsArg(therapist)}','${uid}')" style="padding:7px 16px;background:#185fa5;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer">Add entry</button>
             <button onclick="toggleManualEntry('${uid}')" style="padding:7px 16px;background:none;border:0.5px solid rgba(0,0,0,0.2);border-radius:7px;font-size:13px;cursor:pointer">Cancel</button>
           </div>
           <p style="font-size:11px;color:#5f5e5a;margin-top:8px">Manual rows get an invoice # like <strong>MANUAL-3</strong> instead of a real Noterro invoice number, so your bookkeeper can tell it wasn't pulled from an export. You can also move it to a different section afterward using its "Move to" dropdown, same as an imported row.</p>
@@ -1162,7 +1193,7 @@ function calculate(){
         <textarea class="notes-area" id="notes-${uid}" placeholder="Add any notes for your bookkeeper..."></textarea>
       </div>
       <div style="margin-top:0.75rem;display:flex;gap:8px">
-        <button onclick="copyTherapistSummary('${therapist}','${uid}')" id="copy-btn-${uid}" style="padding:8px 16px;background:#0f6e56;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer;flex:1">📋 Copy summary text</button>
+        <button onclick="copyTherapistSummary('${jsArg(therapist)}','${uid}')" id="copy-btn-${uid}" style="padding:8px 16px;background:#0f6e56;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer;flex:1">📋 Copy summary text</button>
       </div>
       </div>`;
     resultsEl.appendChild(card);
@@ -1208,6 +1239,11 @@ function recalcTotals(uid, therapist){
     const sel=document.getElementById('canc-'+uid+'-'+i);
     const val=parseFloat(sel?sel.value:0)||0;
     flagSelectTotal+=val;
+    const flagItem=lastTherapistData[therapist]&&lastTherapistData[therapist].flags[i];
+    if(flagItem){
+      flagItem.amount=val;
+      flagItem.serviceTypeLabel=(sel&&sel.value&&sel.selectedIndex>=0)?sel.options[sel.selectedIndex].text:'';
+    }
     const valEl=document.getElementById('canc-val-'+uid+'-'+i);
     if(valEl) valEl.textContent='$'+val.toFixed(2);
   }
@@ -1294,8 +1330,10 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
     item.amount = rates.rz30??12;
     data.rz.push(item);
   } else if(targetSection==='massage'){
-    const mins = parseFloat(item.serviceTime)||parseDuration(item.name)||60;
-    item.amount = rates.massage*(mins/60);
+    // Same rule as import: duration from the line item name first, then Service Time.
+    const mins = parseDuration(item.name)||parseFloat(item.serviceTime)||60;
+    item.massageMins = mins;
+    item.amount = parseFloat((parseFloat((mins/60).toFixed(2))*rates.massage).toFixed(2));
     data.massage.push(item);
   } else if(targetSection==='product'){
     const subtotal = parseFloat(item.subtotal)||0;
@@ -1412,7 +1450,7 @@ function refreshBreakdownTable(therapist, uid){
           <td ${colStyle}>${i.total}</td>
           <td ${colStyle}>${i.balance}</td>
           <td ${colStyle}>${i.patient}</td>
-          <td style="padding:4px 8px 4px 0"><select style="font-size:11px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.2);border-radius:4px;background:#fff" onchange="moveRow('${therapist}','${uid}',this,'${currentSection}','${i.key}')"><option value="">Move to...</option>${opts}</select></td>
+          <td style="padding:4px 8px 4px 0"><select style="font-size:11px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.2);border-radius:4px;background:#fff" onchange="moveRow('${jsArg(therapist)}','${uid}',this,'${currentSection}','${i.key}')"><option value="">Move to...</option>${opts}</select></td>
         </tr>`;
       }).join('');
       const makeHeaderInner=()=>`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.15)">${COL_HEADERS.map(h=>`<th style="font-size:11px;color:#5f5e5a;font-weight:500;padding:4px 8px 6px 0;white-space:nowrap">${h}</th>`).join('')}</tr>`;
@@ -1491,7 +1529,7 @@ function refreshBreakdownTable(therapist, uid){
         const r45Pay=sumItems(data.sessions.r45).toFixed(2);
         const r60r90Hrs=(data.sessions.r60.reduce((s,i)=>s+(i.mins||60)/60,0)+data.sessions.r90.reduce((s,i)=>s+(i.mins||90)/60,0)).toFixed(2);
         const r60r90Pay=(sumItems(data.sessions.r60)+sumItems(data.sessions.r90)).toFixed(2);
-        const massHrs=data.massage.reduce((s,i)=>{const m=i.massageMins||parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0).toFixed(2);
+        const massHrs=data.massage.reduce((s,i)=>{const m=i.massageMins||parseDuration(i.name)||parseFloat(i.serviceTime)||60;return s+m/60;},0).toFixed(2);
         const massPay=sumItems(data.massage).toFixed(2);
         const prodPay2=sumItems(data.products||[]).toFixed(2);
         const salPay=salary.toFixed(2);
@@ -1543,44 +1581,44 @@ function refreshBreakdownTable(therapist, uid){
           chartingHrsRounded +
           (data.sessions.r15.reduce((s,i)=>s+(i.mins||30)/60,0))+(data.sessions.r45.reduce((s,i)=>s+(i.mins||45)/60,0))+
           (data.sessions.r60.reduce((s,i)=>s+(i.mins||60)/60,0))+(data.sessions.r90.reduce((s,i)=>s+(i.mins||90)/60,0))+
-          data.massage.reduce((s,i)=>{const m=i.massageMins||parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0)
+          data.massage.reduce((s,i)=>{const m=i.massageMins||parseDuration(i.name)||parseFloat(i.serviceTime)||60;return s+m/60;},0)
         ).toFixed(2)} hrs total</td>
         <td colspan="2" style="font-size:13px;font-weight:600;text-align:right;padding:8px 0;color:#0f6e56" id="subtotal-earned-${uid}">$0.00</td>
       </tr>`;
       html+=`<tr class="section-header"><td colspan="14">Manual entries</td></tr>
         <tr>
           <td colspan="5">Sick / Personal Pay</td>
-          <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="${savedSick}" id="sick-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px"></td>
+          <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="${savedSick}" id="sick-${uid}" oninput="recalcTotals('${uid}','${jsArg(therapist)}')" style="width:100px"></td>
           <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">@ $${calcAvgWage(rates).toFixed(2)}/hr</td>
           <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="sick-hrs-${uid}">0.00 hrs</td>
         </tr>
         <tr>
           <td colspan="5">Holiday Pay</td>
-          <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="${savedHoliday}" id="holiday-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px"></td>
+          <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="${savedHoliday}" id="holiday-${uid}" oninput="recalcTotals('${uid}','${jsArg(therapist)}')" style="width:100px"></td>
           <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">@ $${calcAvgWage(rates).toFixed(2)}/hr</td>
           <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="holiday-hrs-${uid}">0.00 hrs</td>
         </tr>
         <tr>
           <td colspan="5">Vacation Pay</td>
-          <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="${savedVacation}" id="vacation-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px"></td>
+          <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="${savedVacation}" id="vacation-${uid}" oninput="recalcTotals('${uid}','${jsArg(therapist)}')" style="width:100px"></td>
           <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">@ $${calcAvgWage(rates).toFixed(2)}/hr</td>
           <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="vacation-hrs-${uid}">0.00 hrs</td>
         </tr>
         <tr class="section-header"><td colspan="14">Bonus</td></tr>
         <tr class="bonus-row">
           <td colspan="5">Quarterly Bonus</td>
-          <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="${savedBonus}" id="bonus-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px;background:#faeeda"></td>
+          <td colspan="3"><input type="number" class="manual-input" min="0" step="0.01" value="${savedBonus}" id="bonus-${uid}" oninput="recalcTotals('${uid}','${jsArg(therapist)}')" style="width:100px;background:#faeeda"></td>
           <td colspan="6"></td>
         </tr>
         <tr class="bonus-row">
           <td colspan="5">Google Reviews</td>
-          <td colspan="3"><input type="number" class="manual-input" min="0" step="1" value="${savedGoogleReviews}" id="google-reviews-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px;background:#faeeda"></td>
+          <td colspan="3"><input type="number" class="manual-input" min="0" step="1" value="${savedGoogleReviews}" id="google-reviews-${uid}" oninput="recalcTotals('${uid}','${jsArg(therapist)}')" style="width:100px;background:#faeeda"></td>
           <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">× $5.00</td>
           <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="google-reviews-amt-${uid}">$0.00</td>
         </tr>
         <tr class="bonus-row">
           <td colspan="5">WOM Referrals</td>
-          <td colspan="3"><input type="number" class="manual-input" min="0" step="1" value="${savedWomReferrals}" id="wom-referrals-${uid}" oninput="recalcTotals('${uid}','${therapist}')" style="width:100px;background:#faeeda"></td>
+          <td colspan="3"><input type="number" class="manual-input" min="0" step="1" value="${savedWomReferrals}" id="wom-referrals-${uid}" oninput="recalcTotals('${uid}','${jsArg(therapist)}')" style="width:100px;background:#faeeda"></td>
           <td colspan="3" style="font-size:12px;color:#185fa5;text-align:right">× $5.00</td>
           <td colspan="3" style="font-size:12px;font-weight:500;text-align:right" id="wom-referrals-amt-${uid}">$0.00</td>
         </tr>
@@ -1774,6 +1812,15 @@ function copyTherapistSummary(therapist, uid){
   }
   body+='\n';
 
+  if(data.flags&&data.flags.length>0){
+    body+=`UNRECOGNIZED ITEMS (REVIEWED)\n${'─'.repeat(60)}\n`;
+    for(const f of data.flags){
+      const priced=f.amount>0?`${f.serviceTypeLabel||''} — $${f.amount.toFixed(2)}`:'not yet priced';
+      body+=`${f.date}  •  ${f.name}  •  ${f.patient||''}  •  ${priced}\n`;
+    }
+    body+='\n';
+  }
+
   body+=`\nThank you,\nActiv Axion`;
 
   navigator.clipboard.writeText(body).then(()=>{
@@ -1793,7 +1840,7 @@ function buildTherapistSummaryRows(therapist,r,data,rates){
   const round2=(v)=>Math.round((v+1e-9)*100)/100;
   const n=(v)=>isNaN(v)||v===undefined||v===null?0:parseFloat(v)||0;
   const fmt=(v)=>round2(n(v));
-  const uid=therapist.replace(/\s+/g,'_');
+  const uid=uidFor(therapist);
   const notes=document.getElementById('notes-'+uid)?.value||'';
   const avg=n(calcAvgWage(rates))||1;
 
@@ -1813,7 +1860,7 @@ function buildTherapistSummaryRows(therapist,r,data,rates){
   const r45Pay=round2(data.sessions.r45.reduce((s,i)=>s+i.amount,0));
   const r60r90Hrs=round2(data.sessions.r60.reduce((s,i)=>s+(i.mins||60)/60,0)+data.sessions.r90.reduce((s,i)=>s+(i.mins||90)/60,0));
   const r60r90Pay=round2(data.sessions.r60.reduce((s,i)=>s+i.amount,0)+data.sessions.r90.reduce((s,i)=>s+i.amount,0));
-  const massHrs=round2(data.massage.reduce((s,i)=>{const m=i.massageMins||parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0));
+  const massHrs=round2(data.massage.reduce((s,i)=>{const m=i.massageMins||parseDuration(i.name)||parseFloat(i.serviceTime)||60;return s+m/60;},0));
   const massPay=round2(data.massage.reduce((s,i)=>s+i.amount,0));
   const prodPay=round2(n(r.products));
   const cancPay=round2(n(r.cancellation));
@@ -1833,7 +1880,7 @@ function buildTherapistSummaryRows(therapist,r,data,rates){
   if(rates.massage>0) rows.push(['Massage Therapy', fmt(rates.massage), massHrs, fmt(massPay)]);
   rows.push(['  Recovery Zone', '', '', fmt(rzPay)]);
   rows.push(['  Products (10%)', '', '', fmt(prodPay)]);
-  rows.push(['  Cancellations / No-shows', '', '', fmt(cancPay)]);
+  rows.push(['  Cancellations / No-shows (incl. reviewed unrecognized items)', '', '', fmt(cancPay)]);
   rows.push(['Total Commission', '', '', fmt(prodPay+rzPay+cancPay)]);
   if(salPay>0) rows.push(['Salary', fmt(avg), salHrs, fmt(salPay)]);
   rows.push(['Subtotal earned', '', '', fmt(n(r.commission)+n(r.charting)+n(r.adminPay)+n(r.massage)+n(r.products)+n(r.rz)+n(r.cancellation)+n(r.cleaning)+n(r.salary))]);
@@ -1909,8 +1956,8 @@ function buildTherapistDetailRows(therapist,data){
   rows.push([]);
   if(data.flags&&data.flags.length>0){
     rows.push(['Flagged (unrecognized — review manually)']);
-    rows.push(['Invoice #','Date','Patient Name','Line Item Name','Total incl. tax']);
-    for(const f of data.flags) rows.push([f.invoice||'',f.date,f.patient||'',f.name,f.totalWithTax]);
+    rows.push(['Invoice #','Date','Patient Name','Line Item Name','Total incl. tax','Selected Service Type','Commission']);
+    for(const f of data.flags) rows.push([f.invoice||'',f.date,f.patient||'',f.name,f.totalWithTax,f.serviceTypeLabel||'(not selected)',f.amount||0]);
     rows.push([]);
   }
   return rows;
