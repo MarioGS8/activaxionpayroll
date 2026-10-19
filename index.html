@@ -82,6 +82,16 @@
   .manual-entry-grid label { font-size: 12px; color: #5f5e5a; display:block; margin-bottom:4px; }
   .manual-entry-grid input, .manual-entry-grid select { width:100%; padding:6px 8px; border:0.5px solid rgba(0,0,0,0.2); border-radius:6px; font-size:13px; background:#fff; color:#1a1a18; }
   .manual-entry-grid input:disabled { background:#eee; color:#999; }
+  .tab-bar { display:flex; gap:6px; margin-bottom:1.25rem; border-bottom:0.5px solid rgba(0,0,0,0.15); }
+  .tab-btn { padding:9px 16px; font-size:14px; background:none; border:none; border-bottom:2px solid transparent; color:#5f5e5a; cursor:pointer; margin-bottom:-1px; }
+  .tab-btn:hover { color:#1a1a18; }
+  .tab-btn.active { color:#1a1a18; font-weight:500; border-bottom-color:#1a1a18; }
+  .rates-table select, .rates-table input[type="date"] { width:100%; padding:5px 7px; border:0.5px solid rgba(0,0,0,0.15); border-radius:6px; font-size:13px; background:#fff; color:#1a1a18; }
+  .sp-window { background:#f5f5f3; border-radius:8px; padding:10px 14px; font-size:13px; color:#3b6d11; font-weight:500; min-height:36px; }
+  .sp-warn { background:#fff8e1; border:0.5px solid rgba(186,119,23,0.4); color:#854f0b; border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:1rem; }
+  .sp-details { display:none; }
+  .sp-details.open { display:table-row-group; }
+  .toggle-details { font-size:12px; color:#5f5e5a; cursor:pointer; background:none; border:none; padding:0; text-decoration:underline; margin-top:0.75rem; }
 </style>
 </head>
 <body>
@@ -129,6 +139,12 @@
     </div>
   </div>
 
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="payroll" onclick="showTab('payroll')">Payroll</button>
+    <button class="tab-btn" data-tab="stat" onclick="showTab('stat')">Stat holiday / sick pay</button>
+  </div>
+
+  <div id="tab-payroll">
   <!-- Pay period -->
   <div class="card">
     <div class="card-title">Pay period</div>
@@ -159,6 +175,75 @@
   <div class="error-msg" id="error-msg" style="display:none"></div>
   <div class="results" id="results"></div>
   <button class="download-btn" id="download-backup-btn" style="display:none" onclick="downloadFullBackup()">⬇ Download full backup (every line, all therapists)</button>
+  </div>
+
+  <!-- ===== Stat holiday / sick pay tab ===== -->
+  <div id="tab-stat" style="display:none">
+    <p style="font-size:13px;color:#5f5e5a;margin-bottom:1.25rem;line-height:1.5">Quebec · commission-based employees · total earnings over the 12-week lookback ÷ 60. Uses the <strong>Therapist rates</strong> table at the top of the page, the same rates as payroll.</p>
+
+    <div class="card">
+      <div class="card-title-row">
+        <div class="card-title" style="margin-bottom:0">Additional wages log <span id="sp-wages-count" style="text-transform:none;letter-spacing:0;font-weight:400"></span></div>
+        <button class="settings-toggle" id="sp-wages-toggle" onclick="spToggleWages()">Edit entries</button>
+      </div>
+      <div class="settings-section" id="sp-wages-section">
+        <p style="font-size:13px;color:#5f5e5a;margin-bottom:1rem;">Wages paid outside Noterro: bonuses, vacation pay, stat holiday pay, personal days. Entries dated inside the 12-week window are added to earnings. Saved in this browser automatically.</p>
+        <div style="overflow-x:auto">
+        <table class="rates-table">
+          <thead><tr><th style="min-width:180px">Therapist</th><th style="min-width:140px">Date paid</th><th style="min-width:140px">Type</th><th style="min-width:100px">Amount ($)</th><th></th></tr></thead>
+          <tbody id="sp-wages-tbody"></tbody>
+        </table>
+        </div>
+        <button class="add-row-btn" onclick="spAddWageRow()">+ Add entry</button>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:1rem;flex-wrap:wrap">
+          <button class="save-btn" style="margin-top:0" onclick="spExportWages()">Export wages log</button>
+          <label style="padding:7px 14px;background:none;border:0.5px solid rgba(0,0,0,0.2);border-radius:7px;font-size:13px;cursor:pointer;color:#1a1a18">
+            Load wages log<input type="file" accept=".json" style="display:none" onchange="spLoadWages(this)">
+          </label>
+        </div>
+        <p class="settings-note">Your old <strong>wages-log.json</strong> from the separate stat pay page loads here as-is.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Holiday or sick day</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Date</label>
+          <input type="date" id="sp-date">
+        </div>
+        <div class="form-group">
+          <label>Type</label>
+          <select id="sp-type">
+            <option value="stat">Stat holiday</option>
+            <option value="sick">Sick / personal day</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row" style="margin-bottom:0.75rem">
+        <div class="form-group">
+          <label>Therapist</label>
+          <select id="sp-therapist"></select>
+        </div>
+      </div>
+      <div class="sp-window" id="sp-window">Enter a date to see the 12-week lookback window.</div>
+      <p class="settings-note">Both types look back 12 complete pay weeks (Mon–Sun) before the week of the day, per CNESST.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Noterro export</div>
+      <p style="font-size:13px;color:#5f5e5a;margin-bottom:1rem;">Export <strong>Reports → Finance → Practitioner Sales</strong> covering the 12-week window shown above. This is a separate export from the payroll one.</p>
+      <div class="upload-zone" id="sp-drop-zone">
+        <p>📄 Drop CSV here or click to browse</p>
+        <div class="filename" id="sp-filename"></div>
+      </div>
+      <input type="file" id="sp-file-input" accept=".csv">
+    </div>
+
+    <button class="run-btn" id="sp-run-btn" disabled>Calculate stat / sick pay</button>
+    <div class="error-msg" id="sp-error" style="display:none"></div>
+    <div class="results" id="sp-results"></div>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -340,6 +425,7 @@ function readRatesTable(){
 function applyRateEdits(){
   THERAPIST_RATES=readRatesTable();
   persistRates();
+  if(typeof spBuildTherapistSelect==='function') spBuildTherapistSelect();
   const badge=document.getElementById('live-confirm');
   if(badge){ badge.classList.add('show'); clearTimeout(window.__liveBadgeTimer); window.__liveBadgeTimer=setTimeout(()=>badge.classList.remove('show'),1800); }
   const dirty=document.getElementById('rates-dirty');
@@ -2027,6 +2113,305 @@ function downloadFullBackup(){
 
   XLSX.writeFile(wb,`Payroll_Full_Backup_${periodStart}_to_${periodEnd}.xlsx`);
 }
+// ======================= TABS =======================
+function showTab(which){
+  document.getElementById('tab-payroll').style.display=which==='payroll'?'':'none';
+  document.getElementById('tab-stat').style.display=which==='stat'?'':'none';
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===which));
+  if(which==='stat'){ spBuildWagesTable(); spBuildTherapistSelect(); }
+  try{ localStorage.setItem('activaxion-active-tab',which); }catch(e){}
+}
+
+// ================ STAT HOLIDAY / SICK PAY ================
+// Reads THERAPIST_RATES (the payroll rates table) and classifyAndEarn (the payroll service
+// rules) directly, so both tabs always pay and count the same lines at the same rates.
+
+// Salary in the rates table is PER PAY PERIOD. To get a weekly figure we need how many pay
+// periods a year each salaried therapist has. Everyone not listed is paid twice a month (24).
+const SALARY_PERIODS_PER_YEAR={ 'Mario Starnino':12 };
+function spPeriodsPerYear(name){ return SALARY_PERIODS_PER_YEAR[name]||24; }
+
+const WAGES_STORAGE_KEY='activaxion-wages-log-v1';
+const WAGE_TYPES=['Bonus','Stat Holiday Pay','Vacation Pay','Personal Day'];
+let WAGES_LOG=[];
+try{
+  const st=localStorage.getItem(WAGES_STORAGE_KEY);
+  if(st){ const p=JSON.parse(st); if(Array.isArray(p)) WAGES_LOG=p; }
+}catch(e){}
+function spPersistWages(){ try{ localStorage.setItem(WAGES_STORAGE_KEY,JSON.stringify(WAGES_LOG)); }catch(e){} spUpdateWagesCount(); }
+function spUpdateWagesCount(){
+  const el=document.getElementById('sp-wages-count');
+  if(el) el.textContent=WAGES_LOG.length?`· ${WAGES_LOG.length} entr${WAGES_LOG.length===1?'y':'ies'}`:'';
+}
+function spNameOptions(selected){
+  const names=Object.keys(THERAPIST_RATES);
+  if(selected && !names.includes(selected)) names.push(selected);
+  return '<option value="">-- Therapist --</option>'+names.map(n=>
+    `<option value="${escHtml(n)}"${n===selected?' selected':''}>${escHtml(n)}${THERAPIST_RATES[n]?'':' (not in rates table)'}</option>`).join('');
+}
+function spAddWageRow(e){
+  e=e||{};
+  const tr=document.createElement('tr');
+  const type=WAGE_TYPES.includes(e.type)?e.type:'Bonus';
+  tr.innerHTML=`
+    <td><select onchange="spReadWages()">${spNameOptions(e.name||'')}</select></td>
+    <td><input type="date" value="${escHtml(e.date||'')}" onchange="spReadWages()"></td>
+    <td><select onchange="spReadWages()">${WAGE_TYPES.map(t=>`<option${t===type?' selected':''}>${t}</option>`).join('')}</select></td>
+    <td><input type="number" step="0.01" min="0" value="${e.amount!=null?e.amount:''}" oninput="spReadWages()"></td>
+    <td><button class="del-btn" onclick="this.closest('tr').remove();spReadWages()">×</button></td>`;
+  document.getElementById('sp-wages-tbody').appendChild(tr);
+}
+function spBuildWagesTable(){
+  const tbody=document.getElementById('sp-wages-tbody'); if(!tbody) return;
+  tbody.innerHTML='';
+  [...WAGES_LOG].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).forEach(spAddWageRow);
+  spUpdateWagesCount();
+}
+function spReadWages(){
+  const out=[];
+  for(const row of document.querySelectorAll('#sp-wages-tbody tr')){
+    const sels=row.querySelectorAll('select'), inputs=row.querySelectorAll('input');
+    const name=sels[0].value, type=sels[1].value, date=inputs[0].value, amount=parseFloat(inputs[1].value)||0;
+    if(name&&date&&amount>0) out.push({name,date,type,amount});
+  }
+  WAGES_LOG=out; spPersistWages();
+}
+function spToggleWages(){
+  const s=document.getElementById('sp-wages-section'); s.classList.toggle('open');
+  document.getElementById('sp-wages-toggle').textContent=s.classList.contains('open')?'Close':'Edit entries';
+}
+function spExportWages(){
+  spReadWages();
+  const blob=new Blob([JSON.stringify(WAGES_LOG,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='wages-log.json'; a.click(); URL.revokeObjectURL(a.href);
+}
+function spLoadWages(input){
+  const file=input.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const data=JSON.parse(e.target.result);
+      if(!Array.isArray(data)) throw new Error('not a list');
+      if(WAGES_LOG.length>0 && !confirm(`Replace the ${WAGES_LOG.length} entries currently saved in this browser with the ${data.length} in this file?`)) return;
+      WAGES_LOG=data.filter(b=>b&&b.name&&b.date&&parseFloat(b.amount)>0)
+        .map(b=>({name:String(b.name).trim(),date:b.date,type:WAGE_TYPES.includes(b.type)?b.type:'Bonus',amount:parseFloat(b.amount)}));
+      spPersistWages(); spBuildWagesTable();
+    }catch(err){ alert('Could not read wages log file.'); }
+  };
+  reader.readAsText(file); input.value='';
+}
+
+function spBuildTherapistSelect(){
+  const sel=document.getElementById('sp-therapist'); if(!sel) return;
+  const cur=sel.value;
+  sel.innerHTML='<option value="">All therapists</option>'+Object.keys(THERAPIST_RATES).map(n=>`<option value="${escHtml(n)}"${n===cur?' selected':''}>${escHtml(n)}</option>`).join('');
+}
+
+// Dates are compared as YYYY-MM-DD strings (local), so no timezone drift.
+function spISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function spAddDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+function spMonday(d){ const x=new Date(d); const day=x.getDay(); x.setDate(x.getDate()+(day===0?-6:1-day)); x.setHours(0,0,0,0); return x; }
+function spFmt(d){ return d.toLocaleDateString('en-CA',{year:'numeric',month:'long',day:'numeric'}); }
+// Both stat holidays and paid sick/personal days use the 12 complete weeks of pay before
+// the WEEK of the day (CNESST interpretation of LNT s.62, 79.1, 79.7) — pay weeks Mon–Sun.
+function spWindow(dateStr,type){
+  const m=spMonday(new Date(dateStr+'T00:00:00'));
+  return {start:spAddDays(m,-84),end:spAddDays(m,-1)};
+}
+function spUpdateWindow(){
+  const dateStr=document.getElementById('sp-date').value;
+  const type=document.getElementById('sp-type').value;
+  if(dateStr){
+    const w=spWindow(dateStr,type);
+    document.getElementById('sp-window').textContent=`12-week window: ${spFmt(w.start)} → ${spFmt(w.end)}`;
+  }
+  spCheckReady();
+}
+let spCsv=null;
+function spCheckReady(){ document.getElementById('sp-run-btn').disabled=!(document.getElementById('sp-date').value&&spCsv); }
+
+function spLoadFile(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const errEl=document.getElementById('sp-error');
+    const fail=msg=>{ errEl.textContent=msg; errEl.style.display='block'; spCsv=null; document.getElementById('sp-filename').textContent=''; spCheckReady(); };
+    let parsed;
+    try{ parsed=parseCSV(e.target.result); }catch(err){ return fail('Could not read this file as CSV. Make sure you exported the Practitioner Sales report.'); }
+    if(!parsed||parsed.length===0) return fail('This file has no data rows.');
+    const headers=Object.keys(parsed[0]);
+    const missing=REQUIRED_HEADERS.filter(h=>!headers.includes(h));
+    if(!REQUIRED_DATE_HEADERS.some(h=>headers.includes(h))) missing.push('Service Date/Invoice Date');
+    if(missing.length) return fail(`This file is missing expected column(s): ${missing.join(', ')}. Check that this is the Noterro export — Reports → Finance → Practitioner Sales.`);
+    errEl.style.display='none';
+    spCsv=parsed;
+    document.getElementById('sp-filename').textContent=file.name+` (${parsed.length} rows)`;
+    spCheckReady();
+  };
+  reader.readAsText(file);
+}
+
+let SP_RESULTS={};
+const r2=v=>Math.round((v+1e-9)*100)/100;
+
+function spCalculate(){
+  const dateStr=document.getElementById('sp-date').value;
+  const type=document.getElementById('sp-type').value;
+  const only=document.getElementById('sp-therapist').value;
+  const {start,end}=spWindow(dateStr,type);
+  const ws=spISO(start), we=spISO(end);
+  const errEl=document.getElementById('sp-error'); errEl.style.display='none';
+  const out=document.getElementById('sp-results'); out.innerHTML=''; SP_RESULTS={};
+
+  const td={}; const unknownNames=new Set(); let minD=null,maxD=null;
+  const get=n=>td[n]||(td[n]={items:[],flags:[],excluded:[],treatmentDays:new Set(),chartingCount:0});
+  for(const row of spCsv){
+    const practitioner=(row['Practitioner']||'').trim();
+    const rawDate=((row['Service Date']||'').split(' ')[0])||((row['Invoice Date']||'').split(' ')[0]);
+    if(rawDate){ if(!minD||rawDate<minD) minD=rawDate; if(!maxD||rawDate>maxD) maxD=rawDate; }
+    if(!practitioner) continue;
+    if(only && practitioner!==only) continue;
+    const rates=THERAPIST_RATES[practitioner];
+    if(!rates){ unknownNames.add(practitioner); continue; }
+    if(!rawDate||rawDate<ws||rawDate>we) continue;
+    const cat=(row['Service Category']||'').trim();
+    const name=(row['Line Item Name']||'').trim();
+    const earn=classifyAndEarn(cat,name,parseFloat(row['Subtotal'])||0,rates,(row['Product Category']||'').trim(),parseFloat((row['Service Time']||'').trim())||0);
+    const d=get(practitioner);
+    const base={date:rawDate,name,patient:(row['Patient Name']||'').trim(),invoice:(row['Invoice #']||'').trim(),totalWithTax:parseFloat(row['Total'])||0};
+    if(earn.excludedAdminReview){ d.excluded.push({...base,amount:earn.wouldBeAmount}); continue; }
+    if(earn.flag){ d.flags.push({...base,label:earn.label}); continue; }
+    const amount=(earn.commission||0)+(earn.admin||0)+(earn.massage||0)+(earn.rz||0);
+    d.items.push({...base,label:earn.label,amount});
+    if(earn.charting>0) d.chartingCount++;
+    if(isTreatment(cat,name)) d.treatmentDays.add(rawDate);
+  }
+  // Therapists with wage-log entries in the window still get a card even with no Noterro lines.
+  for(const w of WAGES_LOG){
+    if(w.date>=ws && w.date<=we && THERAPIST_RATES[w.name] && (!only||w.name===only)) get(w.name);
+  }
+
+  if(Object.keys(td).length===0){
+    const bits=[];
+    if(unknownNames.size) bits.push(`practitioner(s) not in your rates table: ${[...unknownNames].slice(0,4).join(', ')}`);
+    if(minD) bits.push(`the file covers ${minD} to ${maxD}`);
+    errEl.textContent=`No matching data in the window ${ws} to ${we}${bits.length?' — '+bits.join('; '):''}.`;
+    errEl.style.display='block';
+    return;
+  }
+
+  let head=`<p style="font-size:12px;color:#5f5e5a;margin-bottom:1rem">Window: ${spFmt(start)} → ${spFmt(end)} · Formula: total earnings ÷ 60</p>`;
+  if(minD && (minD>ws || maxD<we)){
+    head+=`<div class="sp-warn">⚠ Your file covers ${minD} to ${maxD}, but the window is ${ws} to ${we}. Earnings outside the file are missing, so stat pay will be too low. Re-export Noterro for the full window.</div>`;
+  }
+  if(unknownNames.size){
+    head+=`<div class="sp-warn">Skipped practitioner(s) not in the rates table: ${escHtml([...unknownNames].join(', '))}.</div>`;
+  }
+  out.insertAdjacentHTML('beforeend',head);
+
+  for(const [therapist,d] of Object.entries(td)){
+    const rates=THERAPIST_RATES[therapist];
+    const uid='sp-'+uidFor(therapist);
+    const services=d.items.reduce((s,i)=>s+i.amount,0);
+    const charting=r2(parseFloat((d.chartingCount*10/60).toFixed(2))*rates.admin);
+    const cleaning=r2(parseFloat((d.treatmentDays.size*15/60).toFixed(2))*rates.admin);
+    const weekly=rates.salary>0?rates.salary*spPeriodsPerYear(therapist)/52:0;
+    const salary=r2(weekly*12);
+    const wages=WAGES_LOG.filter(w=>w.name===therapist&&w.date>=ws&&w.date<=we);
+    const wagesTotal=wages.reduce((s,w)=>s+w.amount,0);
+    const base=services+charting+cleaning+salary+wagesTotal;
+    SP_RESULTS[uid]={base,therapist,flags:d.flags};
+
+    const flagOpts=[
+      '<option value="">-- Select --</option>',
+      '<option value="0">Not paid ($0.00)</option>',
+      ...[15,30,45,60,90].map(m=>`<option value="${getDurationRate(rates,m)}">${m}min ($${getDurationRate(rates,m).toFixed(2)})</option>`),
+      ...(rates.massage>0?[30,45,60,90].map(m=>`<option value="${(rates.massage*m/60).toFixed(2)}">Massage ${m}min ($${(rates.massage*m/60).toFixed(2)})</option>`):[])
+    ].join('');
+    const ellip=(t,n)=>escHtml(t.length>n?t.substring(0,n)+'…':t);
+
+    const card=document.createElement('div');
+    card.className='result-card';
+    card.innerHTML=`
+      <div class="result-header">
+        <div class="therapist-name">${escHtml(therapist)}</div>
+        <div style="text-align:right">
+          <div class="gross-amount" id="${uid}-pay">$${(base/60).toFixed(2)}</div>
+          <div class="gross-label">${type==='stat'?'stat pay':'sick / personal day pay'} owing${d.flags.length?' · ⚠ review flagged lines':''}</div>
+        </div>
+      </div>
+      <div class="result-body">
+        <table class="breakdown-table">
+          <thead><tr><th>Component</th><th style="text-align:right">Amount</th></tr></thead>
+          <tbody>
+            <tr><td>Services, admin, RZ, products (${d.items.length} lines)</td><td>$${services.toFixed(2)}</td></tr>
+            <tr><td>Charting (10min admin × ${d.chartingCount} treatments)</td><td>$${charting.toFixed(2)}</td></tr>
+            <tr><td>Cleaning (15min admin × ${d.treatmentDays.size} treatment days)</td><td>$${cleaning.toFixed(2)}</td></tr>
+            ${salary>0?`<tr class="rrsp-row"><td>Salary (12 weeks × $${weekly.toFixed(2)}/wk · $${rates.salary.toFixed(2)} × ${spPeriodsPerYear(therapist)} periods/yr ÷ 52)</td><td>$${salary.toFixed(2)}</td></tr>`:''}
+            ${wages.length?`<tr class="rrsp-row"><td>Additional wages log (${wages.map(w=>escHtml(w.type)+' '+w.date).join(', ')})</td><td>$${wagesTotal.toFixed(2)}</td></tr>`:''}
+            ${d.flags.length?`<tr class="bonus-row"><td>Cancellations / unrecognized lines</td><td id="${uid}-canc">$0.00</td></tr>`:''}
+            <tr class="total-row"><td>Total earnings ÷ 60</td><td id="${uid}-total">$${base.toFixed(2)} ÷ 60</td></tr>
+          </tbody>
+        </table>
+        ${d.flags.length?`
+        <div style="margin-top:1rem;padding:12px;background:#faeeda;border-radius:8px;">
+          <p style="font-size:12px;color:#854f0b;font-weight:500;margin-bottom:8px">⚠ Pick what was actually paid for each line (same choice you made in payroll):</p>
+          <table class="breakdown-table">
+            <thead><tr><th>Date</th><th>Patient</th><th>Line item</th><th>Total incl. tax</th><th>Paid as</th></tr></thead>
+            <tbody>${d.flags.map((f,idx)=>`<tr>
+              <td style="white-space:nowrap;font-size:12px">${f.date}</td>
+              <td style="font-size:12px">${escHtml(f.patient)}</td>
+              <td style="font-size:12px">${ellip(f.name,45)}</td>
+              <td style="font-size:12px;color:#ba7517">$${f.totalWithTax.toFixed(2)}</td>
+              <td><select class="canc-select" id="${uid}-flag-${idx}" onchange="spRecalc('${uid}')">${flagOpts}</select></td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>`:''}
+        ${d.excluded.length?`<p style="font-size:12px;color:#5f5e5a;margin-top:0.75rem">Not counted: ${d.excluded.length} sick/personal/vacation admin line${d.excluded.length>1?'s':''} from Noterro. If that time was paid, log it in the Additional wages log.</p>`:''}
+        <button class="toggle-details" onclick="spToggleDetails('${uid}',this)">Show all ${d.items.length} lines</button>
+        <table class="breakdown-table" style="margin-top:0.5rem">
+          <tbody class="sp-details" id="${uid}-details">
+            <tr><th>Date</th><th>Line item</th><th>Patient</th><th>Counted as</th><th style="text-align:right">Amount</th></tr>
+            ${[...d.items].sort((a,b)=>a.date.localeCompare(b.date)).map(i=>`<tr>
+              <td style="white-space:nowrap;font-size:12px">${i.date}</td>
+              <td style="font-size:12px;color:#5f5e5a">${ellip(i.name,45)}</td>
+              <td style="font-size:12px;color:#5f5e5a">${escHtml(i.patient)}</td>
+              <td style="font-size:12px;color:#5f5e5a">${escHtml(i.label)}</td>
+              <td style="font-size:12px">$${i.amount.toFixed(2)}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+    out.appendChild(card);
+  }
+}
+function spRecalc(uid){
+  const r=SP_RESULTS[uid]; if(!r) return;
+  let canc=0;
+  r.flags.forEach((f,idx)=>{ canc+=parseFloat(document.getElementById(uid+'-flag-'+idx)?.value)||0; });
+  const total=r.base+canc;
+  const c=document.getElementById(uid+'-canc'); if(c) c.textContent='$'+canc.toFixed(2);
+  document.getElementById(uid+'-total').textContent='$'+total.toFixed(2)+' ÷ 60';
+  document.getElementById(uid+'-pay').textContent='$'+(total/60).toFixed(2);
+}
+function spToggleDetails(uid,btn){
+  const el=document.getElementById(uid+'-details'); el.classList.toggle('open');
+  btn.textContent=el.classList.contains('open')?'Hide lines':btn.textContent.replace('Hide lines','Show lines');
+  if(!el.classList.contains('open')) btn.textContent='Show all '+(el.rows.length-1)+' lines';
+}
+
+document.getElementById('sp-date').addEventListener('change',spUpdateWindow);
+document.getElementById('sp-type').addEventListener('change',spUpdateWindow);
+document.getElementById('sp-run-btn').addEventListener('click',spCalculate);
+(()=>{
+  const dz=document.getElementById('sp-drop-zone'), fi=document.getElementById('sp-file-input');
+  dz.addEventListener('click',()=>fi.click());
+  dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('dragover');});
+  dz.addEventListener('dragleave',()=>dz.classList.remove('dragover'));
+  dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('dragover');if(e.dataTransfer.files[0])spLoadFile(e.dataTransfer.files[0]);});
+  fi.addEventListener('change',()=>{if(fi.files[0])spLoadFile(fi.files[0]); fi.value='';});
+})();
+spBuildTherapistSelect();
+spUpdateWagesCount();
+try{ if(localStorage.getItem('activaxion-active-tab')==='stat') showTab('stat'); }catch(e){}
 </script>
 </body>
 </html>
