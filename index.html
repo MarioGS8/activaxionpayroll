@@ -220,11 +220,13 @@
           </select>
         </div>
       </div>
-      <div class="form-row" style="margin-bottom:0.75rem">
-        <div class="form-group">
-          <label>Therapist</label>
-          <select id="sp-therapist"></select>
+      <div class="form-group" style="margin-bottom:0.75rem">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <label>Therapists</label>
+          <button type="button" onclick="spSelectAll(true)" style="font-size:12px;padding:3px 10px;border:0.5px solid rgba(0,0,0,0.2);border-radius:5px;background:none;cursor:pointer">All</button>
+          <button type="button" onclick="spSelectAll(false)" style="font-size:12px;padding:3px 10px;border:0.5px solid rgba(0,0,0,0.2);border-radius:5px;background:none;cursor:pointer">None</button>
         </div>
+        <div id="sp-therapist" style="display:flex;gap:8px;flex-wrap:wrap"></div>
       </div>
       <div class="sp-window" id="sp-window">Enter a date to see the 12-week lookback window.</div>
       <p class="settings-note">Both types look back 12 complete pay weeks (Mon–Sun) before the week of the day, per CNESST.</p>
@@ -955,7 +957,7 @@ function calculate(){
     const totalCommission=Object.values(data.sessions).flat().reduce((s,i)=>s+i.amount,0);
     const chartingTreatments=data.chartingCount||0;
     const chartingHrsRounded=parseFloat((chartingTreatments*10/60).toFixed(2));
-    const totalCharting=parseFloat((chartingTreatments*10/60*rates.admin).toFixed(2));
+    const totalCharting=parseFloat((chartingHrsRounded*rates.admin).toFixed(2));
     const totalAdmin=data.admin.reduce((s,i)=>s+i.amount,0);
     const totalMassage=data.massage.reduce((s,i)=>s+i.amount,0);
     const totalProducts=data.products.reduce((s,i)=>s+i.amount,0);
@@ -1096,20 +1098,20 @@ function calculate(){
               const massPay=sumItems(data.massage).toFixed(2);
               const prodPay=(data.products||[]).reduce((s,i)=>s+i.amount,0).toFixed(2);
               const salPay=salary.toFixed(2);
-              const summaryRow=(label,rate,hrs,pay)=>`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)">
+              const summaryRow=(label,rate,hrs,pay,key)=>`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)">
                 <td colspan="7" style="font-size:12px;padding:4px 0 4px 8px;color:#1a1a18">${label}</td>
-                <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5">${rate!==null?'$'+rate+'/hr':''}</td>
-                <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a">${hrs!==null?hrs:''}</td>
-                <td colspan="2" style="font-size:12px;text-align:right;font-weight:500">$${pay}</td>
+                <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5" ${key?`id="q-${key}-rate-${uid}"`:''}>${rate!==null?'$'+rate+'/hr':''}</td>
+                <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a" ${key?`id="q-${key}-hrs-${uid}"`:''}>${hrs!==null?hrs:''}</td>
+                <td colspan="2" style="font-size:12px;text-align:right;font-weight:500" ${key?`id="q-${key}-pay-${uid}"`:''}>$${pay}</td>
               </tr>`;
               let rows='';
-              rows+=summaryRow('Admin',(rates.admin).toFixed(2),adminHrsOnly,adminPayOnly);
-              rows+=summaryRow('Cleaning',(rates.admin).toFixed(2),cleaningHrsOnly,cleaningPayOnly);
-              rows+=summaryRow('Charting',(rates.admin).toFixed(2),chartHrs,chartPay);
-              rows+=summaryRow('15-30min Therapy',(rates.r30/30*60).toFixed(2),r15Hrs,r15Pay);
-              rows+=summaryRow('45min Therapy',(rates.r45/45*60).toFixed(2),r45Hrs,r45Pay);
-              rows+=summaryRow('60-90min Therapy',(rates.r60/60*60).toFixed(2),r60r90Hrs,r60r90Pay);
-              if(rates.massage>0) rows+=summaryRow('Massage Therapy',(rates.massage).toFixed(2),massHrs,massPay);
+              rows+=summaryRow('Admin',(rates.admin).toFixed(2),adminHrsOnly,adminPayOnly,'admin');
+              rows+=summaryRow('Cleaning',(rates.admin).toFixed(2),cleaningHrsOnly,cleaningPayOnly,'cleaning');
+              rows+=summaryRow('Charting',(rates.admin).toFixed(2),chartHrs,chartPay,'charting');
+              rows+=summaryRow('15-30min Therapy',(rates.r30/30*60).toFixed(2),r15Hrs,r15Pay,'s15');
+              rows+=summaryRow('45min Therapy',(rates.r45/45*60).toFixed(2),r45Hrs,r45Pay,'s45');
+              rows+=summaryRow('60-90min Therapy',(rates.r60/60*60).toFixed(2),r60r90Hrs,r60r90Pay,'s60');
+              if(rates.massage>0) rows+=summaryRow('Massage Therapy',(rates.massage).toFixed(2),massHrs,massPay,'massage');
               rows+=`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)">
                 <td colspan="7" style="font-size:12px;padding:4px 0 4px 8px 16px;color:#1a1a18">Recovery Zone</td>
                 <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5"></td>
@@ -1314,12 +1316,57 @@ function toggleCard(uid){
   btn.textContent=collapsed?'▲ Collapse':'▼ Expand';
 }
 
+// ===== QuickBooks-exact amounts =====
+// QuickBooks pays every hourly line as Hours × Rate, each rounded to 2 decimals. These helpers
+// produce the payroll amounts the same way, so the export never needs recalculating.
+function q2(v){ return Math.round((v+1e-9)*100)/100; }
+// Minutes a session is billed as (the bucket its rate comes from).
+function billedMins(m){ m=m||60; if(m<=15) return 15; if(m<=30) return 30; if(m<=45) return 45; if(m<=75) return 60; return 90; }
+function qboLine(hrs,rate){ hrs=q2(hrs); rate=q2(rate||0); return {hrs,rate,pay:q2(hrs*rate)}; }
+// A typed dollar amount (sick/holiday/vacation) → whole-cent hours at the rate, paid as hours × rate.
+function qboFromAmount(amount,rate){ rate=q2(rate||0); if(!(amount>0)||!(rate>0)) return {hrs:0,rate,pay:0}; const hrs=q2(amount/rate); return {hrs,rate,pay:q2(hrs*rate)}; }
+function qboLines(therapist){
+  const data=lastTherapistData[therapist], rates=THERAPIST_RATES[therapist];
+  const sessHrs=list=>list.reduce((s,i)=>s+billedMins(i.mins)/60,0);
+  const adminH=q2(data.admin.reduce((s,i)=>s+adminMinsOf(i)/60,0));
+  const cleanH=data.treatmentDays.size*15/60;
+  return {
+    admin:      qboLine(adminH, rates.admin),
+    cleaning:   qboLine(cleanH, rates.admin),
+    adminClean: qboLine(adminH+cleanH, rates.admin),
+    charting:   qboLine((data.chartingCount||0)*10/60, rates.admin),
+    s15:        qboLine(sessHrs(data.sessions.r15), rates.r30*2),
+    s45:        qboLine(sessHrs(data.sessions.r45), rates.r45/0.75),
+    s60:        qboLine(sessHrs(data.sessions.r60)+sessHrs(data.sessions.r90), rates.r60),
+    massage:    qboLine(data.massage.reduce((s,i)=>s+(i.massageMins||parseDuration(i.name)||parseFloat(i.serviceTime)||60)/60,0), rates.massage||0),
+  };
+}
+
 function recalcTotals(uid, therapist){
   const r=lastResults[therapist];
   if(!r) return;
-  const sick=parseFloat(document.getElementById('sick-'+uid)?.value)||0;
-  const holiday=parseFloat(document.getElementById('holiday-'+uid)?.value)||0;
-  const vacation=parseFloat(document.getElementById('vacation-'+uid)?.value)||0;
+  const qRates=THERAPIST_RATES[therapist];
+  if(lastTherapistData[therapist] && qRates){
+    const q=qboLines(therapist);
+    r.qbo=q;
+    r.commission=q2(q.s15.pay+q.s45.pay+q.s60.pay);
+    r.charting=q.charting.pay;
+    r.massage=q.massage.pay;
+    r.cleaning=q.cleaning.pay;
+    r.adminPay=q2(q.adminClean.pay-q.cleaning.pay);
+    const set=(key,line)=>{
+      const p=document.getElementById('q-'+key+'-pay-'+uid), h=document.getElementById('q-'+key+'-hrs-'+uid), rt=document.getElementById('q-'+key+'-rate-'+uid);
+      if(p) p.textContent='$'+line.pay.toFixed(2); if(h) h.textContent=line.hrs.toFixed(2); if(rt) rt.textContent='$'+line.rate.toFixed(2)+'/hr';
+    };
+    set('admin',{hrs:q.admin.hrs,rate:q.admin.rate,pay:r.adminPay}); set('cleaning',q.cleaning); set('charting',q.charting);
+    set('s15',q.s15); set('s45',q.s45); set('s60',q.s60); set('massage',q.massage);
+  }
+  const avgRate=qRates?calcAvgWage(qRates):0;
+  const sickQ=qboFromAmount(parseFloat(document.getElementById('sick-'+uid)?.value)||0,avgRate);
+  const holidayQ=qboFromAmount(parseFloat(document.getElementById('holiday-'+uid)?.value)||0,avgRate);
+  const vacationQ=qboFromAmount(parseFloat(document.getElementById('vacation-'+uid)?.value)||0,avgRate);
+  r.sickQ=sickQ; r.holidayQ=holidayQ; r.vacationQ=vacationQ;
+  const sick=sickQ.pay, holiday=holidayQ.pay, vacation=vacationQ.pay;
   const bonusFlat=parseFloat(document.getElementById('bonus-'+uid)?.value)||0;
   const googleReviews=parseFloat(document.getElementById('google-reviews-'+uid)?.value)||0;
   const womReferrals=parseFloat(document.getElementById('wom-referrals-'+uid)?.value)||0;
@@ -1382,9 +1429,10 @@ function recalcTotals(uid, therapist){
     const sickHrsEl=document.getElementById('sick-hrs-'+uid);
     const holidayHrsEl=document.getElementById('holiday-hrs-'+uid);
     const vacationHrsEl=document.getElementById('vacation-hrs-'+uid);
-    if(sickHrsEl) sickHrsEl.textContent=(sick/avg).toFixed(2)+' hrs';
-    if(holidayHrsEl) holidayHrsEl.textContent=(holiday/avg).toFixed(2)+' hrs';
-    if(vacationHrsEl) vacationHrsEl.textContent=(vacation/avg).toFixed(2)+' hrs';
+    const qtxt=q=>q.pay>0?`${q.hrs.toFixed(2)} hrs → paid $${q.pay.toFixed(2)}`:'0.00 hrs';
+    if(sickHrsEl) sickHrsEl.textContent=qtxt(sickQ);
+    if(holidayHrsEl) holidayHrsEl.textContent=qtxt(holidayQ);
+    if(vacationHrsEl) vacationHrsEl.textContent=qtxt(vacationQ);
   }
 }
 
@@ -1492,7 +1540,7 @@ function refreshBreakdownTable(therapist, uid){
   const cleaning = parseFloat((cleaningHrsRounded*rates.admin).toFixed(2));
   const chartingTreatments = data.chartingCount||0;
   const chartingHrsRounded = parseFloat((chartingTreatments*10/60).toFixed(2));
-  const totalCharting = parseFloat((chartingTreatments*10/60*(rates.admin||0)).toFixed(2));
+  const totalCharting = parseFloat((chartingHrsRounded*(rates.admin||0)).toFixed(2));
   const totalAdmin = sumItems(data.admin);
   const totalRz = sumItems(data.rz);
   const totalMassage = sumItems(data.massage);
@@ -1637,20 +1685,20 @@ function refreshBreakdownTable(therapist, uid){
         const massPay=sumItems(data.massage).toFixed(2);
         const prodPay2=sumItems(data.products||[]).toFixed(2);
         const salPay=salary.toFixed(2);
-        const summaryRow=(label,rate,hrs,pay)=>`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)">
+        const summaryRow=(label,rate,hrs,pay,key)=>`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)">
           <td colspan="7" style="font-size:12px;padding:4px 0 4px 8px;color:#1a1a18">${label}</td>
-          <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5">${rate!==null?'$'+rate+'/hr':''}</td>
-          <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a">${hrs!==null?hrs:''}</td>
-          <td colspan="2" style="font-size:12px;text-align:right;font-weight:500">$${pay}</td>
+          <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5" ${key?`id="q-${key}-rate-${uid}"`:''}>${rate!==null?'$'+rate+'/hr':''}</td>
+          <td colspan="2" style="font-size:12px;text-align:right;color:#5f5e5a" ${key?`id="q-${key}-hrs-${uid}"`:''}>${hrs!==null?hrs:''}</td>
+          <td colspan="2" style="font-size:12px;text-align:right;font-weight:500" ${key?`id="q-${key}-pay-${uid}"`:''}>$${pay}</td>
         </tr>`;
         let sRows='';
-        sRows+=summaryRow('Admin',(rates.admin).toFixed(2),adminHrsOnly,adminPayOnly);
-        sRows+=summaryRow('Cleaning',(rates.admin).toFixed(2),cleaningHrsOnly,cleaningPayOnly);
-        sRows+=summaryRow('Charting',(rates.admin).toFixed(2),chartHrs,chartPay);
-        sRows+=summaryRow('15-30min Therapy',(rates.r30/30*60).toFixed(2),r15Hrs,r15Pay);
-        sRows+=summaryRow('45min Therapy',(rates.r45/45*60).toFixed(2),r45Hrs,r45Pay);
-        sRows+=summaryRow('60-90min Therapy',(rates.r60/60*60).toFixed(2),r60r90Hrs,r60r90Pay);
-        if(rates.massage>0) sRows+=summaryRow('Massage Therapy',(rates.massage).toFixed(2),massHrs,massPay);
+        sRows+=summaryRow('Admin',(rates.admin).toFixed(2),adminHrsOnly,adminPayOnly,'admin');
+        sRows+=summaryRow('Cleaning',(rates.admin).toFixed(2),cleaningHrsOnly,cleaningPayOnly,'cleaning');
+        sRows+=summaryRow('Charting',(rates.admin).toFixed(2),chartHrs,chartPay,'charting');
+        sRows+=summaryRow('15-30min Therapy',(rates.r30/30*60).toFixed(2),r15Hrs,r15Pay,'s15');
+        sRows+=summaryRow('45min Therapy',(rates.r45/45*60).toFixed(2),r45Hrs,r45Pay,'s45');
+        sRows+=summaryRow('60-90min Therapy',(rates.r60/60*60).toFixed(2),r60r90Hrs,r60r90Pay,'s60');
+        if(rates.massage>0) sRows+=summaryRow('Massage Therapy',(rates.massage).toFixed(2),massHrs,massPay,'massage');
         sRows+=`<tr style="border-bottom:0.5px solid rgba(0,0,0,0.05)">
           <td colspan="7" style="font-size:12px;padding:4px 0 4px 8px 16px;color:#1a1a18">Recovery Zone</td>
           <td colspan="3" style="font-size:12px;text-align:right;color:#185fa5"></td>
@@ -1976,12 +2024,14 @@ function buildTherapistSummaryRows(therapist,r,data,rates){
   rows.push([therapist.toUpperCase()]);
   rows.push(['═'.repeat(48)]);
   rows.push(['Component','Rate (/hr)','Hours','Amount']);
-  rows.push(['Admin & Cleaning', fmt(rates.admin), adminCleanHrs, fmt(adminCleanPay)]);
-  rows.push(['Charting', fmt(rates.admin), chartHrs, fmt(chartPay)]);
-  rows.push(['15-30min Therapy', fmt(rates.r30/30*60), r15Hrs, fmt(r15Pay)]);
-  rows.push(['45min Therapy', fmt(rates.r45/45*60), r45Hrs, fmt(r45Pay)]);
-  rows.push(['60-90min Therapy', fmt(rates.r60/60*60), r60r90Hrs, fmt(r60r90Pay)]);
-  if(rates.massage>0) rows.push(['Massage Therapy', fmt(rates.massage), massHrs, fmt(massPay)]);
+  const Q=r.qbo||qboLines(therapist);
+  const qrow=(label,l)=>[label, l.rate, l.hrs, l.pay];
+  rows.push(qrow('Admin & Cleaning',Q.adminClean));
+  rows.push(qrow('Charting',Q.charting));
+  rows.push(qrow('15-30min Therapy',Q.s15));
+  rows.push(qrow('45min Therapy',Q.s45));
+  rows.push(qrow('60-90min Therapy',Q.s60));
+  if(rates.massage>0) rows.push(qrow('Massage Therapy',Q.massage));
   rows.push(['  Recovery Zone', '', '', fmt(rzPay)]);
   rows.push(['  Products (10%)', '', '', fmt(prodPay)]);
   rows.push(['  Cancellations / No-shows (incl. reviewed unrecognized items)', '', '', fmt(cancPay)]);
@@ -1989,9 +2039,10 @@ function buildTherapistSummaryRows(therapist,r,data,rates){
   if(salPay>0) rows.push(['Salary', fmt(avg), salHrs, fmt(salPay)]);
   rows.push(['Subtotal earned', '', '', fmt(n(r.commission)+n(r.charting)+n(r.adminPay)+n(r.massage)+n(r.products)+n(r.rz)+n(r.cancellation)+n(r.cleaning)+n(r.salary))]);
   rows.push([]);
-  rows.push(['Sick/Personal Pay', fmt(avg), n(r.sick)>0?round2(n(r.sick)/avg):'0.00', fmt(r.sick)]);
-  rows.push(['Holiday Pay', fmt(avg), n(r.holiday)>0?round2(n(r.holiday)/avg):'0.00', fmt(r.holiday)]);
-  rows.push(['Vacation Pay', fmt(avg), n(r.vacation)>0?round2(n(r.vacation)/avg):'0.00', fmt(r.vacation)]);
+  const zq={hrs:0,rate:q2(avg),pay:0};
+  rows.push(qrow('Sick/Personal Pay',r.sickQ||zq));
+  rows.push(qrow('Holiday Pay',r.holidayQ||zq));
+  rows.push(qrow('Vacation Pay',r.vacationQ||zq));
   rows.push(['Quarterly Bonus', '', '', fmt(r.bonusFlat)]);
   rows.push([`Google Reviews (${n(r.googleReviews)} x $5)`, '', '', fmt(r.googleReviewsAmt)]);
   rows.push([`WOM Referrals (${n(r.womReferrals)} x $5)`, '', '', fmt(r.womReferralsAmt)]);
@@ -2003,6 +2054,8 @@ function buildTherapistSummaryRows(therapist,r,data,rates){
   return rows;
 }
 
+// "30min ($42.00)" → "30min"
+function stripPrice(label){ return String(label||'').replace(/\s*\(\$[\d.,]+\)\s*$/,'').replace(/^--.*--$/,''); }
 function buildTherapistDetailRows(therapist,data){
   const rows=[
     ['PAYROLL SUMMARY'],
@@ -2052,16 +2105,16 @@ function buildTherapistDetailRows(therapist,data){
   const cancItems=data.cancellations||[];
   rows.push(['Cancellations']);
   if(cancItems.length>0){
-    rows.push(['Invoice #','Invoice Date','Line Item Name','Date','Patient Name','Cancelled Service Type','Commission']);
-    for(const i of cancItems) rows.push([i.invoice,i.invoiceDate,i.name,i.date,i.patient||'',i.serviceTypeLabel||'(not priced)',i.amount||0]);
+    rows.push(['Invoice #','Invoice Date','Line Item Name','Date','Patient Name','Cancelled Service Type']);
+    for(const i of cancItems) rows.push([i.invoice,i.invoiceDate,i.name,i.date,i.patient||'',stripPrice(i.serviceTypeLabel)||'(not selected)']);
   } else {
     rows.push(['No cancellations this period']);
   }
   rows.push([]);
   if(data.flags&&data.flags.length>0){
     rows.push(['Flagged (unrecognized — review manually)']);
-    rows.push(['Invoice #','Date','Patient Name','Line Item Name','Total incl. tax','Selected Service Type','Commission']);
-    for(const f of data.flags) rows.push([f.invoice||'',f.date,f.patient||'',f.name,f.totalWithTax,f.serviceTypeLabel||'(not selected)',f.amount||0]);
+    rows.push(['Invoice #','Date','Patient Name','Line Item Name','Total incl. tax','Selected Service Type']);
+    for(const f of data.flags) rows.push([f.invoice||'',f.date,f.patient||'',f.name,f.totalWithTax,stripPrice(f.serviceTypeLabel)||'(not selected)']);
     rows.push([]);
   }
   return rows;
@@ -2097,8 +2150,6 @@ function downloadFullBackup(){
     overviewRows.push([]);
 
     const detailRows=buildTherapistDetailRows(therapist,data);
-    detailRows.push([]);
-    detailRows.push(...buildTherapistSummaryRows(therapist,r,data,rates));
     const detailWs=XLSX.utils.aoa_to_sheet(detailRows);
     detailWs['!cols']=[{wch:12},{wch:14},{wch:50},{wch:12},{wch:14},{wch:6},{wch:25}];
     applyNameStyle(detailWs,detailRows);
@@ -2208,10 +2259,19 @@ function spLoadWages(input){
   reader.readAsText(file); input.value='';
 }
 
+// Therapist checkboxes: everyone checked by default; unchecking is remembered while the page is open.
+const spUnchecked=new Set();
 function spBuildTherapistSelect(){
-  const sel=document.getElementById('sp-therapist'); if(!sel) return;
-  const cur=sel.value;
-  sel.innerHTML='<option value="">All therapists</option>'+Object.keys(THERAPIST_RATES).map(n=>`<option value="${escHtml(n)}"${n===cur?' selected':''}>${escHtml(n)}</option>`).join('');
+  const box=document.getElementById('sp-therapist'); if(!box) return;
+  box.innerHTML=Object.keys(THERAPIST_RATES).map(n=>`<label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer;padding:4px 10px;border:0.5px solid rgba(0,0,0,0.15);border-radius:6px;background:#f5f5f3">
+    <input type="checkbox" data-name="${escHtml(n)}" ${spUnchecked.has(n)?'':'checked'} onchange="spToggleTherapist(this)"> ${escHtml(n)}</label>`).join('');
+}
+function spToggleTherapist(cb){ if(cb.checked) spUnchecked.delete(cb.dataset.name); else spUnchecked.add(cb.dataset.name); }
+function spSelectAll(on){
+  document.querySelectorAll('#sp-therapist input[type="checkbox"]').forEach(cb=>{ cb.checked=on; spToggleTherapist(cb); });
+}
+function spSelectedTherapists(){
+  return new Set([...document.querySelectorAll('#sp-therapist input[type="checkbox"]:checked')].map(cb=>cb.dataset.name));
 }
 
 // Dates are compared as YYYY-MM-DD strings (local), so no timezone drift.
@@ -2263,11 +2323,12 @@ const r2=v=>Math.round((v+1e-9)*100)/100;
 function spCalculate(){
   const dateStr=document.getElementById('sp-date').value;
   const type=document.getElementById('sp-type').value;
-  const only=document.getElementById('sp-therapist').value;
+  const chosen=spSelectedTherapists();
   const {start,end}=spWindow(dateStr,type);
   const ws=spISO(start), we=spISO(end);
   const errEl=document.getElementById('sp-error'); errEl.style.display='none';
   const out=document.getElementById('sp-results'); out.innerHTML=''; SP_RESULTS={};
+  if(chosen.size===0){ errEl.textContent='Tick at least one therapist.'; errEl.style.display='block'; return; }
 
   const td={}; const unknownNames=new Set(); let minD=null,maxD=null;
   const get=n=>td[n]||(td[n]={items:[],flags:[],excluded:[],treatmentDays:new Set(),chartingCount:0});
@@ -2276,9 +2337,9 @@ function spCalculate(){
     const rawDate=((row['Service Date']||'').split(' ')[0])||((row['Invoice Date']||'').split(' ')[0]);
     if(rawDate){ if(!minD||rawDate<minD) minD=rawDate; if(!maxD||rawDate>maxD) maxD=rawDate; }
     if(!practitioner) continue;
-    if(only && practitioner!==only) continue;
     const rates=THERAPIST_RATES[practitioner];
     if(!rates){ unknownNames.add(practitioner); continue; }
+    if(!chosen.has(practitioner)) continue;
     if(!rawDate||rawDate<ws||rawDate>we) continue;
     const cat=(row['Service Category']||'').trim();
     const name=(row['Line Item Name']||'').trim();
@@ -2294,7 +2355,7 @@ function spCalculate(){
   }
   // Therapists with wage-log entries in the window still get a card even with no Noterro lines.
   for(const w of WAGES_LOG){
-    if(w.date>=ws && w.date<=we && THERAPIST_RATES[w.name] && (!only||w.name===only)) get(w.name);
+    if(w.date>=ws && w.date<=we && THERAPIST_RATES[w.name] && chosen.has(w.name)) get(w.name);
   }
 
   if(Object.keys(td).length===0){
@@ -2319,7 +2380,7 @@ function spCalculate(){
     const rates=THERAPIST_RATES[therapist];
     const uid='sp-'+uidFor(therapist);
     const services=d.items.reduce((s,i)=>s+i.amount,0);
-    const charting=r2(d.chartingCount*10/60*rates.admin);
+    const charting=r2(parseFloat((d.chartingCount*10/60).toFixed(2))*rates.admin);
     const cleaning=r2(parseFloat((d.treatmentDays.size*15/60).toFixed(2))*rates.admin);
     const weekly=rates.salary>0?rates.salary*spPeriodsPerYear(therapist)/52:0;
     const salary=r2(weekly*12);
