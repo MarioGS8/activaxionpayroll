@@ -529,7 +529,13 @@ function getDurationRate(rates,mins){
   return rates.r90;
 }
 
-function classifyAndEarn(cat,name,subtotal,rates,productCat,serviceTime){
+// Total admin minutes for a line = unit minutes (Service Time, else name) × Quantity.
+function adminMinsOf(i){
+  if(i.adminMins) return i.adminMins;
+  return (parseFloat(i.serviceTime)||parseDuration(i.name)||60)*(parseFloat(i.quantity)>0?parseFloat(i.quantity):1);
+}
+function classifyAndEarn(cat,name,subtotal,rates,productCat,serviceTime,quantity){
+  const qty=parseFloat(quantity)>0?parseFloat(quantity):1;
   if(isCancellation(cat,name)) return {commission:0,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Cancellation',flag:true,totalWithTax:0};
   if(productCat) return {commission:subtotal*0.10,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Product (10%)'};
   // Blank Service Category used to be paid as a product (10%). If the line has a duration and its
@@ -543,14 +549,13 @@ function classifyAndEarn(cat,name,subtotal,rates,productCat,serviceTime){
   }
   if(isAdminHours(cat,name)){
     if(/sick|personal day|vacation/i.test(name)){
-      const excludedMins=serviceTime||parseDuration(name)||60;
+      const excludedMins=(serviceTime||parseDuration(name)||60)*qty;
       const wouldBeAmount=parseFloat((rates.admin*(excludedMins/60)).toFixed(2));
       return {commission:0,charting:0,admin:0,massage:0,rz:0,isTreat:false,label:'Excluded — Sick/Personal/Vacation',excludedAdminReview:true,wouldBeAmount};
     }
-    if(/neurotracker.*consult/i.test(name)) return {commission:0,charting:0,admin:parseFloat((0.25*rates.admin).toFixed(2)),massage:0,rz:0,isTreat:false,label:'Admin 15min'};
-    const mins=serviceTime||parseDuration(name)||60;
-    const adminHrs=parseFloat((mins/60).toFixed(2));
-    return {commission:0,charting:0,admin:parseFloat((adminHrs*rates.admin).toFixed(2)),massage:0,rz:0,isTreat:false,label:`Admin ${mins}min`};
+    if(/neurotracker.*consult/i.test(name)) return {commission:0,charting:0,admin:parseFloat((0.25*qty*rates.admin).toFixed(2)),massage:0,rz:0,isTreat:false,label:`Admin ${15*qty}min`,adminMins:15*qty};
+    const mins=(serviceTime||parseDuration(name)||60)*qty;
+    return {commission:0,charting:0,admin:parseFloat((mins/60*rates.admin).toFixed(2)),massage:0,rz:0,isTreat:false,label:`Admin ${mins}min`,adminMins:mins};
   }
   if(isMassage(cat,name)){
     const rawMins=parseDuration(name)||serviceTime||60;
@@ -710,7 +715,7 @@ function makeEditableDurationRows(items,uid,therapist,rate,sectionType){
     const rs=hasBalance?'style="background:#fff0f0"':'';
     const corrected = sectionType==='massage'
       ? (i.massageMins||parseDuration(i.name)||parseFloat(i.serviceTime)||60)
-      : (parseFloat(i.serviceTime)||parseDuration(i.name)||60);
+      : adminMinsOf(i);
     const opts=SECTION_OPTIONS.map(o=>'<option value="'+o.val+'">'+o.label+'</option>').join('');
     return '<tr '+rs+'>'
       +'<td '+cs+'>'+i.invoice+'</td>'
@@ -753,8 +758,8 @@ function updateAdminDuration(therapist,uid,invoiceNum,newMins,adminRate){
   const item=data.admin.find(i=>i.key===invoiceNum);
   if(!item) return;
   const mins=parseFloat(newMins)||60;
-  item.amount=parseFloat((parseFloat((mins/60).toFixed(2))*adminRate).toFixed(2));
-  item.serviceTime=String(mins);
+  item.amount=parseFloat((mins/60*adminRate).toFixed(2));
+  item.adminMins=mins;
   lastResults[therapist].adminPay=data.admin.reduce((s,i)=>s+i.amount,0);
   recalcTotals(uid,therapist);
 }
@@ -858,7 +863,7 @@ function calculate(){
     const name=(row['Line Item Name']||'').trim();
     const subtotal=parseFloat(row['Subtotal'])||0;
     const serviceTimeVal=parseFloat((row['Service Time']||'').trim())||0;
-    const earn=classifyAndEarn(cat,name,subtotal,rates,productCategory,serviceTimeVal);
+    const earn=classifyAndEarn(cat,name,subtotal,rates,productCategory,serviceTimeVal,(row['Quantity']||'').trim());
     if(earn.excludedAdminReview){
       const invoiceNum0=(row['Invoice #']||'').trim();
       therapistData[practitioner].excludedAdmin.push({invoice:invoiceNum0,date:rawDate,name,wouldBeAmount:earn.wouldBeAmount});
@@ -903,7 +908,7 @@ function calculate(){
       d.dateMismatches.push({invoice:invoiceNum,invoiceDate,serviceDate:rawDate,name,patient:patientName});
     }
     if(earn.label==='Product (10%)'){ rawEntry.amount=earn.commission; d.products.push(rawEntry); }
-    else if(earn.admin>0){ rawEntry.amount=earn.admin; d.admin.push(rawEntry); }
+    else if(earn.admin>0){ rawEntry.amount=earn.admin; rawEntry.adminMins=earn.adminMins; d.admin.push(rawEntry); }
     else if(earn.rz>0){ rawEntry.amount=earn.rz; d.rz.push(rawEntry); }
     else if(earn.massage>0){ rawEntry.amount=earn.massage; rawEntry.massageMins=earn.massageMins; d.massage.push(rawEntry); }
     else if(earn.commission>0){
@@ -950,7 +955,7 @@ function calculate(){
     const totalCommission=Object.values(data.sessions).flat().reduce((s,i)=>s+i.amount,0);
     const chartingTreatments=data.chartingCount||0;
     const chartingHrsRounded=parseFloat((chartingTreatments*10/60).toFixed(2));
-    const totalCharting=parseFloat((chartingHrsRounded*rates.admin).toFixed(2));
+    const totalCharting=parseFloat((chartingTreatments*10/60*rates.admin).toFixed(2));
     const totalAdmin=data.admin.reduce((s,i)=>s+i.amount,0);
     const totalMassage=data.massage.reduce((s,i)=>s+i.amount,0);
     const totalProducts=data.products.reduce((s,i)=>s+i.amount,0);
@@ -1027,11 +1032,11 @@ function calculate(){
         <table class="breakdown-table" style="min-width:900px">
           <thead><tr><th>Component</th><th style="text-align:right">Amount</th></tr></thead>
           <tbody>
-            ${data.admin.length>0?`<tr class="section-header"><td colspan="17">Admin Hours (${data.admin.length} lines · $${sumItems(data.admin).toFixed(2)})</td></tr>${makeMassageHeader()}${makeEditableDurationRows(data.admin,uid,therapist,rates.admin,'admin')}<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Admin Total: ${data.admin.reduce((s,i)=>s+(parseFloat(i.serviceTime)||parseDuration(i.name)||60)/60,0).toFixed(2)} hrs</td><td colspan="2" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">$${rates.admin.toFixed(2)}/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$${sumItems(data.admin).toFixed(2)}</td></tr>`:''}
+            ${data.admin.length>0?`<tr class="section-header"><td colspan="17">Admin Hours (${data.admin.length} lines · $${sumItems(data.admin).toFixed(2)})</td></tr>${makeMassageHeader()}${makeEditableDurationRows(data.admin,uid,therapist,rates.admin,'admin')}<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Admin Total: ${data.admin.reduce((s,i)=>s+adminMinsOf(i)/60,0).toFixed(2)} hrs</td><td colspan="2" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">$${rates.admin.toFixed(2)}/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$${sumItems(data.admin).toFixed(2)}</td></tr>`:''}
             <tr class="section-header"><td colspan="15">Cleaning · ${cleaningDays} days worked</td></tr>
             <tr><td style="padding-left:8px">15min admin × ${cleaningDays} days</td><td>$${cleaning.toFixed(2)}</td></tr>
             <tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Cleaning Total: ${cleaningHrsRounded.toFixed(2)} hrs</td><td colspan="2" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">$${rates.admin.toFixed(2)}/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$${cleaning.toFixed(2)}</td></tr>
-            <tr style="border-top:1px solid rgba(0,0,0,0.15);background:#e8eaf0"><td colspan="8" style="font-size:12px;font-weight:600;padding:5px 0 5px 8px">Admin & Cleaning Total: ${(data.admin.reduce((s,i)=>s+(parseFloat(i.serviceTime)||parseDuration(i.name)||60)/60,0)+(cleaningDays*15/60)).toFixed(2)} hrs</td><td colspan="2" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">$${rates.admin.toFixed(2)}/hr</td><td colspan="4" style="font-size:12px;font-weight:600;text-align:right;padding:5px 0">$${(sumItems(data.admin)+cleaning).toFixed(2)}</td></tr>
+            <tr style="border-top:1px solid rgba(0,0,0,0.15);background:#e8eaf0"><td colspan="8" style="font-size:12px;font-weight:600;padding:5px 0 5px 8px">Admin & Cleaning Total: ${(data.admin.reduce((s,i)=>s+adminMinsOf(i)/60,0)+(cleaningDays*15/60)).toFixed(2)} hrs</td><td colspan="2" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">$${rates.admin.toFixed(2)}/hr</td><td colspan="4" style="font-size:12px;font-weight:600;text-align:right;padding:5px 0">$${(sumItems(data.admin)+cleaning).toFixed(2)}</td></tr>
             ${totalCharting>0?`<tr class="section-header"><td colspan="14">Charting · ${chartingTreatments} treatments</td></tr><tr><td style="padding-left:8px">10min admin × ${chartingTreatments} treatments</td><td>$${totalCharting.toFixed(2)}</td></tr><tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Total: ${chartingHrsRounded.toFixed(2)} hrs</td><td colspan="2" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">${rates.admin.toFixed(2)}/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$${totalCharting.toFixed(2)}</td></tr>`:''}
             ${data.sessions.r15.length>0?`<tr class="section-header"><td colspan="14">15–30min Sessions (${data.sessions.r15.length} · $${sumItems(data.sessions.r15).toFixed(2)})</td></tr>${makeHeader()}${makeRows(data.sessions.r15,"r15")}<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="5" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Total: ${data.sessions.r15.reduce((s,i)=>s+(parseFloat(i.serviceTime)||0),0)} min · Qty: ${data.sessions.r15.reduce((s,i)=>s+(parseFloat(i.quantity)||0),0)}</td><td colspan="5" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">${rates.r30.toFixed(2)} (${(rates.r30/30*60).toFixed(2)}/hr)</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">${sumItems(data.sessions.r15).toFixed(2)}</td></tr>`:''}
             ${data.sessions.r45.length>0?`<tr class="section-header"><td colspan="14">45min Sessions (${data.sessions.r45.length} · $${sumItems(data.sessions.r45).toFixed(2)})</td></tr>${makeHeader()}${makeRows(data.sessions.r45,"r45")}<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="5" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Total: ${data.sessions.r45.reduce((s,i)=>s+(parseFloat(i.serviceTime)||0),0)} min · Qty: ${data.sessions.r45.reduce((s,i)=>s+(parseFloat(i.quantity)||0),0)}</td><td colspan="5" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">${rates.r45.toFixed(2)} (${(rates.r45/45*60).toFixed(2)}/hr)</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">${sumItems(data.sessions.r45).toFixed(2)}</td></tr>`:''}
@@ -1075,7 +1080,7 @@ function calculate(){
             <tr style="border-top:1px solid rgba(0,0,0,0.15);background:#fff8e1"><td colspan="10" style="font-size:12px;font-weight:600;padding:6px 0 6px 8px;color:#854f0b">Total Commission (RZ + Products + Cancellations)</td><td colspan="4" style="font-size:12px;font-weight:600;text-align:right;padding:6px 0;color:#854f0b" id="total-commission-${uid}">$0.00</td></tr>
             <tr style="background:#1a1a18"><td colspan="14" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#fff;letter-spacing:0.02em">${therapist} — Summary</td></tr>
             ${(()=>{
-              const adminHrsOnly=(data.admin.reduce((s,i)=>{const m=parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0)).toFixed(2);
+              const adminHrsOnly=(data.admin.reduce((s,i)=>s+adminMinsOf(i)/60,0)).toFixed(2);
               const adminPayOnly=sumItems(data.admin).toFixed(2);
               const cleaningHrsOnly=(data.treatmentDays.size*15/60).toFixed(2);
               const cleaningPayOnly=cleaning.toFixed(2);
@@ -1135,7 +1140,7 @@ function calculate(){
             <tr style="border-top:1px solid rgba(0,0,0,0.15);background:#e8f5e9">
               <td colspan="8" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#0f6e56">Subtotal earned</td>
               <td colspan="4" style="font-size:12px;color:#0f6e56;text-align:right">${(
-                (data.admin.reduce((s,i)=>s+(parseFloat(i.serviceTime)||parseDuration(i.name)||60)/60,0)+(cleaningDays*15/60)) +
+                (data.admin.reduce((s,i)=>s+adminMinsOf(i)/60,0)+(cleaningDays*15/60)) +
                 chartingHrsRounded +
                 (data.sessions.r15.reduce((s,i)=>s+(i.mins||30)/60,0))+(data.sessions.r45.reduce((s,i)=>s+(i.mins||45)/60,0))+
                 (data.sessions.r60.reduce((s,i)=>s+(i.mins||60)/60,0))+(data.sessions.r90.reduce((s,i)=>s+(i.mins||90)/60,0))+
@@ -1417,8 +1422,10 @@ function moveRow(therapist, uid, selectEl, fromSection, invoiceNum){
 
   const rates = THERAPIST_RATES[therapist];
   if(targetSection==='admin'){
-    const mins = parseFloat(item.serviceTime)||parseDuration(item.name)||60;
-    item.amount = rates.admin*(mins/60);
+    item.adminMins = 0;
+    const mins = adminMinsOf(item);
+    item.adminMins = mins;
+    item.amount = parseFloat((rates.admin*(mins/60)).toFixed(2));
     data.admin.push(item);
   } else if(targetSection==='rz15'){
     item.amount = rates.rz15??6;
@@ -1485,7 +1492,7 @@ function refreshBreakdownTable(therapist, uid){
   const cleaning = parseFloat((cleaningHrsRounded*rates.admin).toFixed(2));
   const chartingTreatments = data.chartingCount||0;
   const chartingHrsRounded = parseFloat((chartingTreatments*10/60).toFixed(2));
-  const totalCharting = parseFloat((chartingHrsRounded*(rates.admin||0)).toFixed(2));
+  const totalCharting = parseFloat((chartingTreatments*10/60*(rates.admin||0)).toFixed(2));
   const totalAdmin = sumItems(data.admin);
   const totalRz = sumItems(data.rz);
   const totalMassage = sumItems(data.massage);
@@ -1562,7 +1569,7 @@ function refreshBreakdownTable(therapist, uid){
       }
       html+=sectionHeader(`Cleaning · ${cleaningDays} days worked`);
       html+=`<tr><td style="padding-left:8px">15min admin × ${cleaningDays} days</td><td>$${cleaning.toFixed(2)}</td></tr>`;
-      html+=`<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Admin & Cleaning Total: ${(data.admin.reduce((s,i)=>{const m=parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0)+(cleaningDays*15/60)).toFixed(2)} hrs</td><td colspan="2" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">${rates.admin.toFixed(2)}/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$${(sumItems(data.admin)+cleaning).toFixed(2)}</td></tr>`;
+      html+=`<tr style="border-top:0.5px solid rgba(0,0,0,0.1);background:#f5f5f3"><td colspan="8" style="font-size:12px;font-weight:500;padding:5px 0 5px 8px">Admin & Cleaning Total: ${(data.admin.reduce((s,i)=>s+adminMinsOf(i)/60,0)+(cleaningDays*15/60)).toFixed(2)} hrs</td><td colspan="2" style="font-size:12px;color:#185fa5;text-align:right;padding:5px 0">${rates.admin.toFixed(2)}/hr</td><td colspan="4" style="font-size:12px;font-weight:500;text-align:right;padding:5px 0">$${(sumItems(data.admin)+cleaning).toFixed(2)}</td></tr>`;
       if(totalCharting>0){
         html+=sectionHeader(`Charting · ${chartingTreatments} treatments`);
         html+=`<tr><td style="padding-left:8px">10min admin × ${chartingTreatments} treatments</td><td>$${totalCharting.toFixed(2)}</td></tr>`;
@@ -1614,7 +1621,7 @@ function refreshBreakdownTable(therapist, uid){
       html+=`<tr style="border-top:1px solid rgba(0,0,0,0.15);background:#fff8e1"><td colspan="10" style="font-size:12px;font-weight:600;padding:6px 0 6px 8px;color:#854f0b">Total Commission (RZ + Products + Cancellations)</td><td colspan="4" style="font-size:12px;font-weight:600;text-align:right;padding:6px 0;color:#854f0b" id="total-commission-${uid}">$0.00</td></tr>`;
       html+=`<tr style="background:#1a1a18"><td colspan="14" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#fff;letter-spacing:0.02em">${therapist} — Summary</td></tr>`;
       html+=(()=>{
-        const adminHrsOnly=(data.admin.reduce((s,i)=>{const m=parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0)).toFixed(2);
+        const adminHrsOnly=(data.admin.reduce((s,i)=>s+adminMinsOf(i)/60,0)).toFixed(2);
         const adminPayOnly=sumItems(data.admin).toFixed(2);
         const cleaningHrsOnly=(cleaningDays*15/60).toFixed(2);
         const cleaningPayOnly=cleaning.toFixed(2);
@@ -1674,7 +1681,7 @@ function refreshBreakdownTable(therapist, uid){
       html+=`<tr style="border-top:1px solid rgba(0,0,0,0.15);background:#e8f5e9">
         <td colspan="8" style="font-size:13px;font-weight:600;padding:8px 0 8px 8px;color:#0f6e56">Subtotal earned</td>
         <td colspan="4" style="font-size:12px;color:#0f6e56;text-align:right">${(
-          (data.admin.reduce((s,i)=>s+(parseFloat(i.serviceTime)||parseDuration(i.name)||60)/60,0)+(cleaningDays*15/60)) +
+          (data.admin.reduce((s,i)=>s+adminMinsOf(i)/60,0)+(cleaningDays*15/60)) +
           chartingHrsRounded +
           (data.sessions.r15.reduce((s,i)=>s+(i.mins||30)/60,0))+(data.sessions.r45.reduce((s,i)=>s+(i.mins||45)/60,0))+
           (data.sessions.r60.reduce((s,i)=>s+(i.mins||60)/60,0))+(data.sessions.r90.reduce((s,i)=>s+(i.mins||90)/60,0))+
@@ -1797,7 +1804,7 @@ function submitManualEntry(therapist, uid){
 
   if(section==='admin'){
     const mins = rawVal>0?rawVal:60;
-    base.serviceCategory='Admin'; base.serviceTime=String(mins); base.subtotal='';
+    base.serviceCategory='Admin'; base.serviceTime=String(mins); base.subtotal=''; base.adminMins=mins;
     base.amount = parseFloat((rates.admin*(mins/60)).toFixed(2));
     data.admin.push(base);
   } else if(section==='massage'){
@@ -1941,7 +1948,7 @@ function buildTherapistSummaryRows(therapist,r,data,rates){
   const notes=document.getElementById('notes-'+uid)?.value||'';
   const avg=n(calcAvgWage(rates))||1;
 
-  const adminHrs=round2(data.admin.reduce((s,i)=>{const m=parseFloat(i.serviceTime)||parseDuration(i.name)||60;return s+m/60;},0));
+  const adminHrs=round2(data.admin.reduce((s,i)=>s+adminMinsOf(i)/60,0));
   const cleanHrs=round2(data.treatmentDays.size*15/60);
   const adminCleanHrs=round2(adminHrs+cleanHrs);
   const adminCleanPay=round2(n(r.adminPay)+n(r.cleaning));
@@ -2013,7 +2020,7 @@ function buildTherapistDetailRows(therapist,data){
     }
     rows.push(HEADERS);
     for(const i of items) rows.push([i.invoice,i.invoiceDate,i.name,i.serviceTime,i.date,i.quantity,i.patient||'']);
-    const timeTotal=items.reduce((s,i)=>s+(parseFloat(i.serviceTime)||0),0);
+    const timeTotal=items.reduce((s,i)=>s+(label==='Admin Hours'?adminMinsOf(i):(parseFloat(i.serviceTime)||0)),0);
     const qtyTotal=items.reduce((s,i)=>s+(parseFloat(i.quantity)||0),0);
     rows.push(['','TOTAL','',timeTotal,'',qtyTotal,'']);
     rows.push([]);
@@ -2275,7 +2282,7 @@ function spCalculate(){
     if(!rawDate||rawDate<ws||rawDate>we) continue;
     const cat=(row['Service Category']||'').trim();
     const name=(row['Line Item Name']||'').trim();
-    const earn=classifyAndEarn(cat,name,parseFloat(row['Subtotal'])||0,rates,(row['Product Category']||'').trim(),parseFloat((row['Service Time']||'').trim())||0);
+    const earn=classifyAndEarn(cat,name,parseFloat(row['Subtotal'])||0,rates,(row['Product Category']||'').trim(),parseFloat((row['Service Time']||'').trim())||0,(row['Quantity']||'').trim());
     const d=get(practitioner);
     const base={date:rawDate,name,patient:(row['Patient Name']||'').trim(),invoice:(row['Invoice #']||'').trim(),totalWithTax:parseFloat(row['Total'])||0};
     if(earn.excludedAdminReview){ d.excluded.push({...base,amount:earn.wouldBeAmount}); continue; }
@@ -2312,7 +2319,7 @@ function spCalculate(){
     const rates=THERAPIST_RATES[therapist];
     const uid='sp-'+uidFor(therapist);
     const services=d.items.reduce((s,i)=>s+i.amount,0);
-    const charting=r2(parseFloat((d.chartingCount*10/60).toFixed(2))*rates.admin);
+    const charting=r2(d.chartingCount*10/60*rates.admin);
     const cleaning=r2(parseFloat((d.treatmentDays.size*15/60).toFixed(2))*rates.admin);
     const weekly=rates.salary>0?rates.salary*spPeriodsPerYear(therapist)/52:0;
     const salary=r2(weekly*12);
