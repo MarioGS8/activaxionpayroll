@@ -168,8 +168,8 @@ const DEFAULT_RATES = {
   "Alexis Boosamra":    { r15:21.00, r30:42.00, r45:53.50, r60:57.50, r90:86.25, massage:0,  admin:22.10, rz15:6, rz30:12, salary:337,  salaryRate:33.7 },
   "Jordan Katsoulis":   { r15:18.25, r30:36.50, r45:46.50, r60:50.00, r90:75.00, massage:0,  admin:20.50, rz15:6, rz30:12, salary:0   },
   "Gabrielle Khreiche": { r15:15.75, r30:31.50, r45:40.00, r60:43.00, r90:64.50, massage:46, admin:18.10, rz15:6, rz30:12, salary:0   },
-  "Grace Lewis":        { r15:14.00, r30:28.00, r45:36.00, r60:40.00, r90:60.00, massage:0,  admin:16.60, rz15:6, rz30:12, salary:0   },
-  "Justin Hernandez":   { r15:14.00, r30:28.00, r45:36.00, r60:40.00, r90:60.00, massage:0,  admin:16.60, rz15:6, rz30:12, salary:0   },
+  "Grace Lewis":        { r15:14.28, r30:28.56, r45:36.72, r60:40.80, r90:61.20, massage:0,  admin:16.60, rz15:6, rz30:12, salary:0   },
+  "Justin Hernandez":   { r15:15.00, r30:30.00, r45:40.00, r60:43.00, r90:64.50, massage:0,  admin:18.60, rz15:6, rz30:12, salary:0   },
   "Meghan Vincent":     { r15:14.25, r30:28.50, r45:37.50, r60:40.00, r90:60.00, massage:0,  admin:16.60, rz15:6, rz30:12, salary:0   },
   "David De Petrillo":  { r15:12.50, r30:25.00, r45:33.75, r60:40.00, r90:60.00, massage:46, admin:16.60, rz15:6, rz30:12, salary:0   }
 };
@@ -199,6 +199,17 @@ const RATE_UPDATES = [
   { name:'Jordan Katsoulis', field:'r60', from:48.96, to:50.00 },
   { name:'Jordan Katsoulis', field:'r15', from:17.85, to:18.25 },
   { name:'Jordan Katsoulis', field:'r90', from:73.44, to:75.00 },
+  { name:'Justin Hernandez', field:'r15',   from:14.00, to:15.00 },
+  { name:'Justin Hernandez', field:'r30',   from:28.00, to:30.00 },
+  { name:'Justin Hernandez', field:'r45',   from:36.00, to:40.00 },
+  { name:'Justin Hernandez', field:'r60',   from:40.00, to:43.00 },
+  { name:'Justin Hernandez', field:'r90',   from:60.00, to:64.50 },
+  { name:'Justin Hernandez', field:'admin', from:16.60, to:18.60 },
+  { name:'Grace Lewis',      field:'r15',   from:14.00, to:14.28 },
+  { name:'Grace Lewis',      field:'r30',   from:28.00, to:28.56 },
+  { name:'Grace Lewis',      field:'r45',   from:36.00, to:36.72 },
+  { name:'Grace Lewis',      field:'r60',   from:40.00, to:40.80 },
+  { name:'Grace Lewis',      field:'r90',   from:60.00, to:61.20 },
 ];
 // New therapists that must reach browsers that already have saved rates. Each is added once;
 // if you later delete one by hand it stays deleted (tracked in ADDED_STORAGE_KEY).
